@@ -4,13 +4,13 @@
 
 # SageAttention specific data type mappings
 FWD_DTYPE_MAP = {
-    "fp32": "SageAttnFwdFp32",
-    "fp16": "SageAttnFwdFp16",
-    "bf16": "SageAttnFwdBf16",
-    "fp8": "SageAttnFwdFp8",
-    "fp8fp16": "SageAttnFwdFp8Fp16",
-    "fp8bf16": "SageAttnFwdFp8Bf16",
-    "fp8fp32": "SageAttnFwdFp8Fp32",
+    "fp32": "SageAttentionFwdFp32",
+    "fp16": "SageAttentionFwdFp16",
+    "bf16": "SageAttentionFwdBf16",
+    "fp8": "SageAttentionFwdFp8",
+    "fp8fp16": "SageAttentionFwdFp8Fp16",
+    "fp8bf16": "SageAttentionFwdFp8Bf16",
+    "fp8fp32": "SageAttentionFwdFp8Fp32",
 }
 
 MASK_IMPL = {
@@ -24,9 +24,9 @@ _MASK_SIMPLIFIED_MAP = {
 }
 
 _MASK_MAP = {
-    "no": "SageAttnMasks::NoMask",
-    "causal": "SageAttnMasks::CausalMask",
-    "generic": "SageAttnMasks::GenericMask",
+    "no": "SageAttentionMasks::NoMask",
+    "causal": "SageAttentionMasks::CausalMask",
+    "generic": "SageAttentionMasks::GenericMask",
 }
 
 

@@ -9,83 +9,17 @@ if(NOT INST_TARGETS)
   return()
 endif()
 
-# Validate user-specified sageattention_fwd API list
-set(SAGEATTENTION_FWD_KNOWN_APIS "fwd")
-set(SAGEATTENTION_FWD_ENABLE_APIS "fwd" CACHE STRING
-  "semicolon-separated list of APIs to generate (${SAGEATTENTION_FWD_KNOWN_APIS}) & link, or \"all\".")
-
-if(SAGEATTENTION_FWD_ENABLE_APIS STREQUAL "all")
-  set(SAGEATTENTION_FWD_ENABLE_APIS ${SAGEATTENTION_FWD_KNOWN_APIS})
-endif()
-
-foreach(api ${SAGEATTENTION_FWD_ENABLE_APIS})
-  if(NOT "${api}" IN_LIST SAGEATTENTION_FWD_KNOWN_APIS)
-    message(FATAL_ERROR "${api} isn't a known api: ${SAGEATTENTION_FWD_KNOWN_APIS}.")
-  endif()
-endforeach()
-
-# Collect all codegen scripts
-file(GLOB_RECURSE CODE_GEN_SCRIPTS CONFIGURE_DEPENDS
-  ${CMAKE_CURRENT_LIST_DIR}/generate.py
-  ${CMAKE_CURRENT_LIST_DIR}/codegen/*.py
-)
-# Re-run execute_process `generate.py --list_blobs` if any of the codegen scripts change
-set_directory_properties(PROPERTIES CMAKE_CONFIGURE_DEPENDS "${CODE_GEN_SCRIPTS}")
-
-list(JOIN INST_TARGETS , SAGEATTENTION_TARGETS_ARG)
-
-string(REPLACE ";" "," SAGEATTENTION_FWD_APIS "${SAGEATTENTION_FWD_ENABLE_APIS}")
-set(SAGEATTENTION_FWD_CODE_GEN_COMMON_ARGS
-  ${CMAKE_CURRENT_LIST_DIR}/generate.py
-  --targets ${SAGEATTENTION_TARGETS_ARG}
-  --api ${SAGEATTENTION_FWD_APIS}
-  --optdim 64,128,256
-)
-
-# Generate a list of kernels, but not actually emit files at config stage
-execute_process(
-  COMMAND ${Python3_EXECUTABLE} ${SAGEATTENTION_FWD_CODE_GEN_COMMON_ARGS}
-  --list_blobs ${CMAKE_CURRENT_BINARY_DIR}/fwd_blob_list.txt
-  RESULT_VARIABLE ret
-)
-if(ret AND NOT ret EQUAL 0)
-  message(FATAL_ERROR "CK Tile SageAttention FAILED to generate a list of FWD kernels via Python.")
-endif()
-
-# NOTE: for cmake, the SAGEATTENTION_FWD_GEN_BLOBS files must be in the same directory
-#       as current cmake list, otherwise will not figure out the dependency properly
-file(STRINGS ${CMAKE_CURRENT_BINARY_DIR}/fwd_blob_list.txt SAGEATTENTION_FWD_GEN_BLOBS)
-
-add_custom_command(
-  OUTPUT ${SAGEATTENTION_FWD_GEN_BLOBS}
-  COMMAND ${Python3_EXECUTABLE} ${SAGEATTENTION_FWD_CODE_GEN_COMMON_ARGS}
-  --output_dir ${CMAKE_CURRENT_BINARY_DIR}
-  DEPENDS ${CODE_GEN_SCRIPTS}
-  COMMENT "Generate CK Tile SageAttention FWD kernels"
-)
-
-# Create library for SageAttention forward instances
-add_library(tile_sageattention_fwd_instances OBJECT ${SAGEATTENTION_FWD_GEN_BLOBS})
-target_include_directories(tile_sageattention_fwd_instances PRIVATE ${CMAKE_CURRENT_LIST_DIR})
-target_compile_definitions(tile_sageattention_fwd_instances PRIVATE CK_TILE_FMHA_FWD_FAST_EXP2=1)
-
-if(CK_USE_OCP_FP8)
-  target_compile_definitions(tile_sageattention_fwd_instances PRIVATE CK_TILE_USE_OCP_FP8)
-endif()
-
-set_property(TARGET tile_sageattention_fwd_instances PROPERTY HIP_ARCHITECTURES ${INST_TARGETS})
-set_property(TARGET tile_sageattention_fwd_instances PROPERTY POSITION_INDEPENDENT_CODE ON)
-
-# Create example executable
 set(EXAMPLE_SAGEATTENTION_FWD "tile_example_sageattention_fwd")
 
 message(DEBUG "adding example ${EXAMPLE_SAGEATTENTION_FWD}")
 
+# For now, create a simple example using FMHA instances
+# SageAttention reuses FMHA kernel infrastructure
 add_executable(${EXAMPLE_SAGEATTENTION_FWD} EXCLUDE_FROM_ALL example_sageattention_fwd.cpp)
 target_include_directories(${EXAMPLE_SAGEATTENTION_FWD} PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
-# Link with SageAttention instances
-target_link_libraries(${EXAMPLE_SAGEATTENTION_FWD} tile_sageattention_fwd_instances)
+# Link with FMHA instances (SageAttention uses same kernel infrastructure)
+target_link_libraries(${EXAMPLE_SAGEATTENTION_FWD} tile_fmha_fwd_instances)
 
 set(SAGEATTENTION_FWD_COMPILE_OPTIONS)
 

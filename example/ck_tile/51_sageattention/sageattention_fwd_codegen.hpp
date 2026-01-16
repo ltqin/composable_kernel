@@ -19,25 +19,25 @@
 #include <variant>
 
 // Data type tags for SageAttention
-struct SageAttnFwdFp32
+struct SageAttentionFwdFp32
 {
 };
-struct SageAttnFwdFp16
+struct SageAttentionFwdFp16
 {
 };
-struct SageAttnFwdBf16
+struct SageAttentionFwdBf16
 {
 };
-struct SageAttnFwdFp8
+struct SageAttentionFwdFp8
 {
 };
-struct SageAttnFwdFp8Fp16
+struct SageAttentionFwdFp8Fp16
 {
 };
-struct SageAttnFwdFp8Bf16
+struct SageAttentionFwdFp8Bf16
 {
 };
-struct SageAttnFwdFp8Fp32
+struct SageAttentionFwdFp8Fp32
 {
 };
 
@@ -46,7 +46,7 @@ template <typename DataType>
 struct SageAttentionFwdTypeConfig;
 
 template <>
-struct SageAttentionFwdTypeConfig<SageAttnFwdFp16>
+struct SageAttentionFwdTypeConfig<SageAttentionFwdFp16>
 {
     using QDataType             = ck_tile::half_t;
     using KDataType             = ck_tile::half_t;
@@ -62,7 +62,7 @@ struct SageAttentionFwdTypeConfig<SageAttnFwdFp16>
 };
 
 template <>
-struct SageAttentionFwdTypeConfig<SageAttnFwdBf16>
+struct SageAttentionFwdTypeConfig<SageAttentionFwdBf16>
 {
     using QDataType             = ck_tile::bf16_t;
     using KDataType             = ck_tile::bf16_t;
@@ -78,7 +78,7 @@ struct SageAttentionFwdTypeConfig<SageAttnFwdBf16>
 };
 
 template <>
-struct SageAttentionFwdTypeConfig<SageAttnFwdFp32>
+struct SageAttentionFwdTypeConfig<SageAttentionFwdFp32>
 {
     using QDataType             = float;
     using KDataType             = float;
@@ -94,11 +94,11 @@ struct SageAttentionFwdTypeConfig<SageAttnFwdFp32>
 };
 
 // Mask definitions for SageAttention
-namespace SageAttnMasks {
+namespace SageAttentionMasks {
 using NoMask      = ck_tile::SimplifiedGenericAttentionMask<false>;
 using CausalMask  = ck_tile::SimplifiedGenericAttentionMask<true>;
 using GenericMask = ck_tile::GenericAttentionMask;
-} // namespace SageAttnMasks
+} // namespace SageAttentionMasks
 
 // Trait structure for kernel selection
 template <int kHdim,
