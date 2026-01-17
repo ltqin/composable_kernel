@@ -1,8 +1,6 @@
 # Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
 # SPDX-License-Identifier: MIT
 # generate kernel instances to speed up compilation
-
-# SageAttention specific data type mappings
 FWD_DTYPE_MAP = {
     "fp32": "SageAttentionFwdFp32",
     "fp16": "SageAttentionFwdFp16",
@@ -12,6 +10,8 @@ FWD_DTYPE_MAP = {
     "fp8bf16": "SageAttentionFwdFp8Bf16",
     "fp8fp32": "SageAttentionFwdFp8Fp32",
 }
+
+BWD_DTYPE_MAP = {"fp32": "FmhaBwdFp32", "fp16": "FmhaBwdFp16", "bf16": "FmhaBwdBf16"}
 
 MASK_IMPL = {
     "generic": "ck_tile::GenericAttentionMask",
@@ -24,9 +24,9 @@ _MASK_SIMPLIFIED_MAP = {
 }
 
 _MASK_MAP = {
-    "no": "SageAttentionMasks::NoMask",
-    "causal": "SageAttentionMasks::CausalMask",
-    "generic": "SageAttentionMasks::GenericMask",
+    "no": "FmhaMasks::NoMask",
+    "causal": "FmhaMasks::CausalMask",
+    "generic": "FmhaMasks::GenericMask",
 }
 
 
@@ -90,23 +90,61 @@ BIAS_MAP = {
     "alibi": "ck_tile::BlockAttentionBiasEnum::ALIBI",
 }
 
+# TODO: this is ugly
 BIAS_CHECK_MAP = {
     "no": "bias_enum::no_bias",
     "bias": "bias_enum::elementwise_bias",
     "alibi": "bias_enum::alibi",
 }
 
+DROPOUT_MAP = {
+    "no": "ck_tile::BlockDropoutBwd<false, true,  false>",
+    "dropout_wg32": "ck_tile::BlockDropoutBwd<true,  true,  false>",
+    "dropout_wg32_storerandval": "ck_tile::BlockDropoutBwd<true,  true,  true >",
+    "dropout_wg16": "ck_tile::BlockDropoutBwd<true,  false, false>",
+    "dropout_wg16_storerandval": "ck_tile::BlockDropoutBwd<true,  false, true >",
+}
+
+DROPOUT_CHECK_MAP = {
+    "no": "t.has_dropout == false",
+    "dropout_wg32": "t.has_dropout == true && t.is_store_randval == false",
+    "dropout_wg32_storerandval": "t.has_dropout == true && t.is_store_randval == true",
+    "dropout_wg16": "t.has_dropout == true && t.is_store_randval == false",
+    "dropout_wg16_storerandval": "t.has_dropout == true && t.is_store_randval == true",
+}
+
+ROPE_MAP = {
+    "no": "ck_tile::RotaryEmbeddingEnum::NONE",
+    "inter": "ck_tile::RotaryEmbeddingEnum::INTERLEAVED",
+    "half": "ck_tile::RotaryEmbeddingEnum::HALF_ROTATED",
+}
+
+ROPE_CHECK_MAP = {
+    "no": "rope_enum::none",
+    "inter": "rope_enum::interleaved",
+    "half": "rope_enum::half_rotated",
+}
+
 MODE_MAP = {"batch": "false", "group": "true"}
 
 LAYOUT_MAP = {"row": "true", "col": "false"}
 
-# SageAttention uses qr_async pipeline
 PIPELINE_MAP = {
+    "qr": "ck_tile::BlockFmhaPipelineQRKSVS",
     "qr_async": "ck_tile::BlockFmhaPipelineQRKSVSAsync",
+    "qs": "ck_tile::BlockFmhaPipelineQSKSVS",
+    "qr_async_trload": "ck_tile::BlockFmhaPipelineQRKSVSAsyncTrload",
+    "qr_async_trload_v3": "ck_tile::BlockFmhaFwdV3Pipeline",
 }
 
 PIPELINE_ENUM_MAP = {
+    "qr": "ck_tile::BlockFmhaPipelineEnum::QRKSVS",
     "qr_async": "ck_tile::BlockFmhaPipelineEnum::QRKSVS_ASYNC",
+    "qr_nwarp_sshuffle": "ck_tile::BlockFmhaPipelineEnum::QRKSVS",
+    "qs": "ck_tile::BlockFmhaPipelineEnum::QSKSVS",
+    "qr_pagedkv": "ck_tile::BlockFmhaPipelineEnum::QRKSVS",
+    "qr_async_trload": "ck_tile::BlockFmhaPipelineEnum::QRKSVS_ASYNC_TRLOAD",
+    "qr_async_trload_v3": "ck_tile::BlockFmhaPipelineEnum::QRKSVS_ASYNC_TRLOAD_V3",
 }
 
 BOOL_MAP = {

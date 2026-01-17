@@ -5,6 +5,7 @@
 
 import argparse
 from enum import IntEnum
+from pathlib import Path
 import pkgutil
 from typing import List, Optional
 
@@ -22,7 +23,7 @@ ops = []
 for importer, module_name, _ in pkgutil.iter_modules(codegen.ops.__path__):
     full_module_name = "%s.%s" % (codegen.ops.__name__, module_name)
     ops.append(importer.find_spec(module_name).loader.load_module(module_name))
-unwanted_prefix = "sageattention_"
+unwanted_prefix = "fmha_"
 handlers = dict(
     [
         (
@@ -43,108 +44,136 @@ def write_blobs(
     api_list: List[str],
     filters_list: List[str],
     optdim_list: List[int],
+    receipt,
+    mask_impl,
 ) -> None:
     if output_dir is None:
-        output_dir = GEN_DIR
+        output_dir = Path(__file__).parent
+    else:
+        output_dir = Path(output_dir) / GEN_DIR
 
-    for api in api_list:
-        if api not in handlers:
-            raise ValueError(
-                f"Unknown API: {api}. Available APIs: {list(handlers.keys())}"
-            )
+    output_dir.mkdir(parents=True, exist_ok=True)
 
+    for api, kernel_filter in zip(api_list, filters_list):
         handler = handlers[api][HandlerId.WRITE_BLOBS]
-        handler(targets, output_dir, optdim_list, filters_list)
+        handler(targets, output_dir, kernel_filter, receipt, optdim_list, mask_impl)
 
 
+# list all the files that will be generated
 def list_blobs(
     targets: List[str],
+    output_file: Optional[str],
     api_list: List[str],
     filters_list: List[str],
     optdim_list: List[int],
-    list_blobs_file: Optional[str],
+    receipt,
+    mask_impl,
 ) -> None:
-    all_blobs = []
+    assert output_file is not None
+    file_path = Path(output_file)
 
-    for api in api_list:
-        if api not in handlers:
-            raise ValueError(
-                f"Unknown API: {api}. Available APIs: {list(handlers.keys())}"
-            )
+    # create an empty file / drop its contents if it exists
+    open(file_path, "w").close()
 
+    for api, kernel_filter in zip(api_list, filters_list):
         handler = handlers[api][HandlerId.LIST_BLOBS]
-        blobs = handler(targets, optdim_list, filters_list)
-        all_blobs.extend(blobs)
-
-    if list_blobs_file:
-        with open(list_blobs_file, "w") as f:
-            for blob in all_blobs:
-                f.write(f"{blob}\n")
-    else:
-        for blob in all_blobs:
-            print(blob)
+        handler(targets, file_path, kernel_filter, receipt, optdim_list, mask_impl)
 
 
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Generate SageAttention kernel instances"
+        prog="generate",
+        description="gen API for CK fmha kernel",
     )
-
     parser.add_argument(
         "--targets",
-        type=str,
-        required=True,
-        help="Comma-separated list of GPU targets (e.g., gfx90a,gfx942,gfx1100)",
+        default="gfx9,gfx950",
+        required=False,
+        help="list of GPU targets, separated by comma.",
+    )
+    parser.add_argument(
+        "-d",
+        "--direction",  # we keep 'direction' option for backward compatibility
+        "-a",
+        "--api",
+        default="fwd",
+        required=False,
+        help="supply API(s) to generate (default: fwd). separated by comma.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output_dir",
+        required=False,
+        help="write all the blobs into a directory",
+    )
+    parser.add_argument(
+        "-l", "--list_blobs", required=False, help="list all the kernels to a file"
+    )
+    # TODO: if using filter, must apply same value to output_dir and list_blobs
+    parser.add_argument(
+        "-f",
+        "--filter",
+        default="",
+        required=False,
+        help="filter out kernels that need to generate, using fnmatch module",
     )
 
     parser.add_argument(
-        "--api",
-        type=str,
-        default="fwd",
-        help="Comma-separated list of APIs to generate (e.g., fwd)",
+        "-m",
+        "--mask",
+        default="simplified",
+        required=False,
+        help="mask implementation, simplified/generic",
+    )
+
+    parser.add_argument(
+        "-r",
+        "--receipt",
+        default=0,
+        required=False,
+        help="codegen receipt. 0: generate only 8xhdim coverage\n"
+        + "  1: generate more instance to cover all hdim\n"
+        + "  2: Only generate instance for Flash attention integration\n"
+        + "  4: Only generate instance for PyTorch integration\n"
+        + "  100-199: Only generate instance for Aiter(mha_fwd) integration\n"
+        + "  200-299: Only generate instance for Aiter(mha_varlen_fwd) integration\n"
+        + "  300-399: Only generate instance for Aiter(mha_bwd) integration\n"
+        + "  400-499: Only generate instance for Aiter(mha_varlen_bwd) integration\n"
+        + "  600-699: Only generate instance for aiter::mha_fwd && aiter::mha_fwd_splitkv && aiter::mha_bwd C++ api integration",
     )
 
     parser.add_argument(
         "--optdim",
-        type=str,
-        default="64,128",
-        help="Comma-separated list of head dimensions to optimize for (e.g., 32,64,128,256)",
-    )
-
-    parser.add_argument(
-        "--filter",
-        type=str,
-        default="",
-        help="Comma-separated list of filters (not implemented yet)",
-    )
-
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default=None,
-        help="Output directory for generated files",
-    )
-
-    parser.add_argument(
-        "--list_blobs",
-        type=str,
-        default=None,
-        help="Output file to list all blob filenames (instead of generating them)",
+        default="-1",
+        required=False,
+        help="only optimize the hdim in the list. separated by comma. -1 is the default choice"
+        + "eg. --optdim=32,64,128,256",
     )
 
     args = parser.parse_args()
+    targets = args.targets.split(",")
+    api_list = args.direction.split(",")
+    filter_list = args.filter.split(",")
+    filter_list.extend([""] * (len(api_list) - len(filter_list)))
+    optdim_list = [int(hdim) for hdim in args.optdim.split(",")]
 
-    # Parse arguments
-    targets = [t.strip() for t in args.targets.split(",")]
-    api_list = [a.strip() for a in args.api.split(",")]
-    optdim_list = [int(d.strip()) for d in args.optdim.split(",")]
-    filters_list = [f.strip() for f in args.filter.split(",")] if args.filter else []
-
-    if args.list_blobs:
-        list_blobs(targets, api_list, filters_list, optdim_list, args.list_blobs)
+    if args.list_blobs is not None:
+        list_blobs(
+            targets,
+            args.list_blobs,
+            api_list,
+            filter_list,
+            optdim_list,
+            int(args.receipt),
+            mask_impl=args.mask,
+        )
     else:
-        write_blobs(targets, args.output_dir, api_list, filters_list, optdim_list)
-
-
-if __name__ == "__main__":
-    main()
+        write_blobs(
+            targets,
+            args.output_dir,
+            api_list,
+            filter_list,
+            optdim_list,
+            int(args.receipt),
+            mask_impl=args.mask,
+        )
