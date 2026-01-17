@@ -24,7 +24,7 @@ list(JOIN INST_TARGETS , SAGEATTENTION_TARGETS_ARG)
 set(SAGEATTENTION_FWD_CODE_GEN_COMMON_ARGS
   ${CMAKE_CURRENT_LIST_DIR}/generate.py
   --targets ${SAGEATTENTION_TARGETS_ARG}
-  --api fwd
+  --api sageattention_fwd
   --optdim 64,128
 )
 
