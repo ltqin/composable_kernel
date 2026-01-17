@@ -13,13 +13,31 @@ set(EXAMPLE_SAGEATTENTION_FWD "tile_example_sageattention_fwd")
 
 message(DEBUG "adding example ${EXAMPLE_SAGEATTENTION_FWD}")
 
-# For now, create a simple example using FMHA instances
-# SageAttention reuses FMHA kernel infrastructure
+# SageAttention currently reuses FMHA kernel infrastructure
+# This means we link to tile_fmha_fwd_instances which contains ~1400 kernel variants
+# 
+# To reduce compilation time, you can:
+# 1. Modify example/ck_tile/01_fmha/CMakeLists.txt:
+#    - Set FMHA_FWD_ENABLE_APIS to "fwd" only (line 14)
+#    - Reduce --optdim to "64,128" only (line 50)
+#    This will reduce instances from 1400 to ~100
+#
+# 2. Or disable BUILD_TESTING in your cmake configuration
+#    This also reduces the number of generated instances
+
 add_executable(${EXAMPLE_SAGEATTENTION_FWD} EXCLUDE_FROM_ALL example_sageattention_fwd.cpp)
 target_include_directories(${EXAMPLE_SAGEATTENTION_FWD} PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
-# Link with FMHA instances (SageAttention uses same kernel infrastructure)
+# Link with FMHA instances (contains all kernel variants)
 target_link_libraries(${EXAMPLE_SAGEATTENTION_FWD} tile_fmha_fwd_instances)
+
+# Define API macros (we only use basic FWD API)
+target_compile_definitions(${EXAMPLE_SAGEATTENTION_FWD} PRIVATE
+  CK_TILE_FMHA_FWD_API=1
+  CK_TILE_FMHA_FWD_APPENDKV_API=0
+  CK_TILE_FMHA_FWD_SPLITKV_API=0
+  CK_TILE_FMHA_FWD_PAGEDKV_API=0
+)
 
 set(SAGEATTENTION_FWD_COMPILE_OPTIONS)
 
