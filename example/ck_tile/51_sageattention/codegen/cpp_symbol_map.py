@@ -131,7 +131,7 @@ LAYOUT_MAP = {"row": "true", "col": "false"}
 
 PIPELINE_MAP = {
     "qr": "ck_tile::BlockFmhaPipelineQRKSVS",
-    "qr_async": "ck_tile::BlockFmhaPipelineQRKSVSAsync",
+    "qr_async": "ck_tile::BlockSageAttentionPipelineQRKSVSAsync",
     "qs": "ck_tile::BlockFmhaPipelineQSKSVS",
     "qr_async_trload": "ck_tile::BlockFmhaPipelineQRKSVSAsyncTrload",
     "qr_async_trload_v3": "ck_tile::BlockFmhaFwdV3Pipeline",

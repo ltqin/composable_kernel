@@ -7,7 +7,7 @@
 #include "ck_tile/host/device_prop.hpp"
 #include "ck_tile/host/kernel_launch.hpp"
 #include "ck_tile/ops/epilogue.hpp"
-#include "ck_tile/ops/fmha.hpp" // For now, reuse fmha ops; later switch to sageattention
+#include "ck_tile/ops/fmha.hpp"
 
 #include "bias.hpp"
 #include "mask.hpp"
