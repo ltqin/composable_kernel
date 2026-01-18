@@ -189,7 +189,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                                  bool i_perm,
                                  bool o_perm,
                                  float scale_s,
-                                 float logits_soft_cap,
                                  bool is_v_rowmajor,
                                  bool lse,
                                  ck_tile::index_t page_block_size,
@@ -909,7 +908,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         else // fmha_fwd_traits or fmha_splitkv_traits
         {
             traits.is_group_mode       = (mode == mode_enum::group);
-            traits.has_logits_soft_cap = 0.f < logits_soft_cap;
+            traits.has_logits_soft_cap = false; // logits_soft_cap always disabled
             traits.mask_type           = mask.type;
             traits.bias_type           = bias.type;
             traits.has_sink            = mask.sink > 0 ? true : false;
@@ -1065,7 +1064,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
 
             args.scale_s = scale_s;
 
-            args.logits_soft_cap = logits_soft_cap;
+            args.logits_soft_cap = 0.f; // logits_soft_cap always disabled
 
             args.stride_bias =
                 (bias.type == bias_enum::alibi ? (bias.rank_info == 0 ? 0 : nhead) : stride_bias);
@@ -1598,15 +1597,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                     ck_tile::identity{},
                     ck_tile::scales(scale_s_host));
 
-            if(0.f < logits_soft_cap)
-            {
-                ck_tile::reference_unary_elementwise<SaccDataType, SaccDataType, SaccDataType>(
-                    s_host_ref, s_host_ref, [logits_soft_cap](SaccDataType logits) {
-                        return ck_tile::type_convert<SaccDataType>(
-                            logits_soft_cap *
-                            std::tanhf(ck_tile::type_convert<float>(logits / logits_soft_cap)));
-                    });
-            }
+            // logits_soft_cap is always disabled, skip this block
 
             if(bias.type == bias_enum::elementwise_bias)
             {

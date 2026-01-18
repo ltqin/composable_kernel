@@ -50,7 +50,6 @@ auto create_args(int argc, char* argv[])
                 "n",
                 "n or 0, no scale\n"
                 "pt or 1, per-tensor scale\n")
-        .insert("logits_soft_cap", "0", "attention logits soft capping value.")
         .insert("iperm",
                 "1",
                 "permute input\n"
@@ -142,7 +141,6 @@ auto run(const ck_tile::ArgParser& arg_parser)
     bool i_perm                      = arg_parser.get_bool("iperm");
     bool o_perm                      = arg_parser.get_bool("operm");
     float scale_s                    = arg_parser.get_float("scale_s");
-    float logits_soft_cap            = arg_parser.get_float("logits_soft_cap");
     bool is_v_rowmajor               = arg_parser.get_str("vlayout") == "r";
     bool lse                         = arg_parser.get_bool("lse");
     ck_tile::index_t page_block_size = arg_parser.get_int("page_block_size");
@@ -188,7 +186,6 @@ auto run(const ck_tile::ArgParser& arg_parser)
                                                  i_perm,
                                                  o_perm,
                                                  scale_s,
-                                                 logits_soft_cap,
                                                  is_v_rowmajor,
                                                  lse,
                                                  page_block_size,
