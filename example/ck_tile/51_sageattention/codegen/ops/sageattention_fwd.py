@@ -977,28 +977,28 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
         pipelines = []
         if dtype in cls._DT_FP32:
             qscale = "no"
-            for logits, mask, bias, lse, dropout, skip, sink in itertools.product(
-                ["t", "f"],
+            logits = "f"  # logits: only false
+            lse = "f"  # lse: only false
+            dropout = "f"  # dropout: only false
+            skip = "f"  # skip: only false
+            sink = "f"  # sink: only false
+            for mask, bias in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
-                ["t", "f"],
-                ["t", "f"],
-                ["t", "f"],
-                ["t", "f"],
             ):
                 pipelines.append(FmhaFwdPipeline("qr", "row", "f", "f", "f", "f", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
                 pipelines.append(FmhaFwdPipeline("qr", "row", "f", "t", "f", "f", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
                 pipelines.append(FmhaFwdPipeline("qr", "row", "t", "t", "t", "t", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
         elif dtype in cls._DT_FP16_BF16:
             qscale = "no"
-            for logits, mask, bias, lse, dropout, skip, sink in itertools.product(
-                ["t", "f"],
+            logits = "f"  # logits: only false
+            lse = "f"  # lse: only false
+            dropout = "f"  # dropout: only false
+            skip = "f"  # skip: only false
+            sink = "f"  # sink: only false
+            for mask, bias in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
-                ["t", "f"],
-                ["t", "f"],
-                ["t", "f"],
-                ["t", "f"],
             ):
                 if hdim == 256 and hdim_v == 256:
                     pipelines.append(FmhaFwdPipeline("qr", "row", "f", "f", "f", "f", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
@@ -1017,19 +1017,22 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
                         pipelines.append(FmhaFwdPipeline("qr", "row", "t", "t", "t", "t", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip # TODO: cover arbitraty hdim# fmt: skip
         elif dtype in cls._DT_FP8BF16 or dtype in cls._DT_FP8FP32:
             # no need lse/dropout kernels
-            for logits, qscale, mask, bias, sink in itertools.product(
-                ["t", "f"],
-                ["no", "pertensor"],
+            logits = "f"  # logits: only false
+            bias = "no"  # bias: only no
+            lse = "f"  # lse: only false
+            dropout = "f"  # dropout: only false
+            skip = "f"  # skip: only false
+            sink = "f"  # sink: only false
+            for mask, qscale in itertools.product(
                 get_mask_map(mask_impl).keys(),
-                ["no"],
-                ["f", "t"],
+                ["no", "pertensor"],
             ):
                 if hdim == 64:
-                    pipelines.append(FmhaFwdPipeline("qr", "row", "t", "f", "t", "t", logits, bias, "f", "f", qscale, mask, "f", "f", sink))  # fmt: skip
-                    pipelines.append(FmhaFwdPipeline("qr", "row", "t", "t", "t", "t", logits, bias, "f", "f", qscale, mask, "f", "f", sink))  # fmt: skip
+                    pipelines.append(FmhaFwdPipeline("qr", "row", "t", "f", "t", "t", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                    pipelines.append(FmhaFwdPipeline("qr", "row", "t", "t", "t", "t", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
                 else:
-                    pipelines.append(FmhaFwdPipeline("qr_async", "row", "t", "f", "t", "t", logits, bias, "f", "f", qscale, mask, "f", "f", sink))  # fmt: skip
-                    pipelines.append(FmhaFwdPipeline("qr_async", "row", "t", "t", "t", "t", logits, bias, "f", "f", qscale, mask, "f", "f", sink))  # fmt: skip
+                    pipelines.append(FmhaFwdPipeline("qr_async", "row", "t", "f", "t", "t", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                    pipelines.append(FmhaFwdPipeline("qr_async", "row", "t", "t", "t", "t", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
         elif dtype in ["fp8", "fp8fp16", "bf8"]:
             # TODO
             pass
@@ -1060,14 +1063,14 @@ class KernelComponentFactoryGfx950(
         )
         if dtype in cls._DT_FP16_BF16:
             qscale = "no"
-            for logits, mask, bias, lse, dropout, skip, sink in itertools.product(
-                ["t", "f"],
+            logits = "f"  # logits: only false
+            lse = "f"  # lse: only false
+            dropout = "f"  # dropout: only false
+            skip = "f"  # skip: only false
+            sink = "f"  # sink: only false
+            for mask, bias in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
-                ["t", "f"],
-                ["t", "f"],
-                ["t", "f"],
-                ["t", "f"],
             ):
                 if (
                     (hdim, hdim_v) in [(64, 64), (128, 128)]
@@ -1082,7 +1085,9 @@ class KernelComponentFactoryGfx950(
             # qr_async_trload_v3 only supports hdim=hdim_v=128 for now
             if (hdim, hdim_v) == (128, 128):
                 # qr_async_trload_v3 only supports (generic) causal mask
-                for logits, mask in itertools.product(["t", "f"], ["no", "causal"]):
+                logits = "f"  # logits: only false
+                qscale = "no"
+                for mask in ["no", "causal"]:
                     pipelines.append(FmhaFwdPipeline("qr_async_trload_v3", "row", "t", "t", "f", "f",
                         F_logits=logits, F_bias="no", F_lse="f", F_dropout="f", F_qscale=qscale, F_mask=mask, F_skip="f", F_trload="t", F_sink="f"))  # fmt: skip
 
@@ -1133,24 +1138,31 @@ class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
         pipelines = []
         if dtype in cls._DT_FP16_BF16:
             qscale = "no"
-            for logits, mask, bias, lse, dropout, skip, sink in itertools.product(
-                ["t", "f"],
+            logits = "f"  # logits: only false
+            lse = "f"  # lse: only false
+            dropout = "f"  # dropout: only false
+            skip = "f"  # skip: only false
+            sink = "f"  # sink: only false
+            for mask, bias in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
-                ["t", "f"],
-                ["t", "f"],
-                ["t", "f"],
-                ["t", "f"],
             ):
                 pipelines.append(FmhaFwdPipeline("qr", "row", "f", "f", "f", "f", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
                 pipelines.append(FmhaFwdPipeline("qr", "row", "t", "t", "t", "t", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
         elif dtype in cls._DT_FP8_FP8BF16 or dtype in cls._DT_FP8FP32:
             # no need lse/dropout kernels
-            for logits, qscale, mask, bias in itertools.product(
-                ["f"], ["no", "pertensor"], get_mask_map(mask_impl).keys(), ["no"]
+            logits = "f"  # logits: only false
+            bias = "no"  # bias: only no
+            lse = "f"  # lse: only false
+            dropout = "f"  # dropout: only false
+            skip = "f"  # skip: only false
+            sink = "f"  # sink: only false
+            for mask, qscale in itertools.product(
+                get_mask_map(mask_impl).keys(),
+                ["no", "pertensor"],
             ):
-                pipelines.append(FmhaFwdPipeline("qr", "row", "f", "f", "f", "f", logits, bias, "f", "f", qscale, mask, "f", "f", "f"))  # fmt: skip
-                pipelines.append(FmhaFwdPipeline("qr", "row", "t", "t", "t", "t", logits, bias, "f", "f", qscale, mask, "f", "f", "f"))  # fmt: skip
+                pipelines.append(FmhaFwdPipeline("qr", "row", "f", "f", "f", "f", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                pipelines.append(FmhaFwdPipeline("qr", "row", "t", "t", "t", "t", logits, bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
         return pipelines
 
 
