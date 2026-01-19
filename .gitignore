@@ -88,6 +88,21 @@ test_data/*
 !test_data/*.py
 !test_data/*.sh
 
+# Build scripts and temporary files
+rebuild.sh
+*.tar.gz
+tile_example_*
+att.txt
+o_host_*.txt
+input_*.yaml
+install
+install_*.sh
+
+# Profiling data
+.rocprofv3/
+pass_*/
+workloads/
+
 # Exceptions to build* patterns above
 # The experimental/builder directory should be tracked despite matching build*
 !experimental/builder
