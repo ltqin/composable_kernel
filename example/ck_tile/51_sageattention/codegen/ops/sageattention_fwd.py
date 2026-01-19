@@ -140,7 +140,7 @@ float fmha_fwd_<trait, {F_arch.tag}>(const ck_tile::stream_config& s, fmha_fwd_a
 #endif // !defined(__HIP_DEVICE_COMPILE__) || ({F_arch.preprocessor_check})
 """
 
-FMHA_FWD_API_FILENAME = "fmha_fwd_api.cpp"
+FMHA_FWD_API_FILENAME = "sageattn_fwd_api.cpp"
 FMHA_FWD_API_HEADER = """
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2018-2025, Advanced Micro Devices, Inc. All rights reserved.\n
@@ -674,7 +674,7 @@ class FmhaFwdKernel:
     def name(self) -> str:
         # TODO: we don't encode idx here
         return (
-            f"fmha_fwd_d{self.F_hdim}_{self.F_dtype}_{self.F_mode}_"
+            f"sageattn_fwd_d{self.F_hdim}_{self.F_dtype}_{self.F_mode}_"
             + self.F_tile.name
             + "_"
             + self.F_pipeline.name
