@@ -174,7 +174,7 @@ struct FmhaMasks
 };
 
 // runtime args, some will passed to karg, some will used to compute grids/blocks
-struct fmha_fwd_args
+struct sageattn_fwd_args
 {
     const void* q_ptr;
     const void* k_ptr;
@@ -588,7 +588,7 @@ struct fmha_batch_prefill_args
 };
 
 template <typename SageAttnKernel>
-auto sageattn_fwd_create_kargs_and_grids(fmha_fwd_args args)
+auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
 {
     assert(args.nhead_q % args.nhead_k == 0);
     auto kargs = [&] {
@@ -706,7 +706,7 @@ auto sageattn_fwd_create_kargs_and_grids(fmha_fwd_args args)
 }
 
 template <typename SageAttnKernel>
-auto sageattn_fwd_v3_create_kargs_and_grids(fmha_fwd_args args)
+auto sageattn_fwd_v3_create_kargs_and_grids(sageattn_fwd_args args)
 {
     /// NOTICE: This was borrowed from Aiter. Make sure the selected remap_opt setting truly
     /// maximizes the kernel's performance.
@@ -1268,7 +1268,7 @@ template <ck_tile::index_t HDim_,
           bool kUseTrLoad_,
           bool kSkipMinSeqlenQ_ = false,
           bool kHasSink_        = false>
-struct fmha_fwd_traits_
+struct sageattn_fwd_traits_
 {
     static constexpr ck_tile::index_t HDim           = HDim_;
     using DataType                                   = ck_tile::remove_cvref_t<DataType_>;
@@ -1323,29 +1323,29 @@ template <ck_tile::index_t HDim_,
               ck_tile::BlockAttentionKVCacheMemoryLayoutEnum::VECTORIZED_LAYOUT,
           ck_tile::BlockAttentionKVCacheLookupTableEnum kKVLookupTable_ =
               ck_tile::BlockAttentionKVCacheLookupTableEnum::SGLANG_PAGE_TABLE_1D>
-struct fmha_fwd_batch_prefill_traits_ : public fmha_fwd_traits_<HDim_,
-                                                                DataType_,
-                                                                kIsGroupMode_,
-                                                                kM0_,
-                                                                kN0_,
-                                                                kK0_,
-                                                                kN1_,
-                                                                kK1_,
-                                                                kK0BlockLength_,
-                                                                kIsVLayoutRowMajor_,
-                                                                FmhaPipelineEnum_,
-                                                                FmhaMask_,
-                                                                BiasEnum_,
-                                                                kStoreLse_,
-                                                                kHasDropout_,
-                                                                QScaleEnum_,
-                                                                kPadS_,
-                                                                kPadSK_,
-                                                                kPadD_,
-                                                                kPadDv_,
-                                                                kUseTrLoad_,
-                                                                kSkipMinSeqlenQ_,
-                                                                false>
+struct fmha_fwd_batch_prefill_traits_ : public sageattn_fwd_traits_<HDim_,
+                                                                    DataType_,
+                                                                    kIsGroupMode_,
+                                                                    kM0_,
+                                                                    kN0_,
+                                                                    kK0_,
+                                                                    kN1_,
+                                                                    kK1_,
+                                                                    kK0BlockLength_,
+                                                                    kIsVLayoutRowMajor_,
+                                                                    FmhaPipelineEnum_,
+                                                                    FmhaMask_,
+                                                                    BiasEnum_,
+                                                                    kStoreLse_,
+                                                                    kHasDropout_,
+                                                                    QScaleEnum_,
+                                                                    kPadS_,
+                                                                    kPadSK_,
+                                                                    kPadD_,
+                                                                    kPadDv_,
+                                                                    kUseTrLoad_,
+                                                                    kSkipMinSeqlenQ_,
+                                                                    false>
 {
     static constexpr auto kKVMemoryLayout            = kKVMemoryLayout_;
     static constexpr auto kKVLookupTable             = kKVLookupTable_;
@@ -1354,7 +1354,7 @@ struct fmha_fwd_batch_prefill_traits_ : public fmha_fwd_traits_<HDim_,
 };
 
 template <typename Traits_, typename Arch = void>
-float fmha_fwd_(const ck_tile::stream_config&, fmha_fwd_args);
+float sageattn_fwd_(const ck_tile::stream_config&, sageattn_fwd_args);
 
 template <ck_tile::index_t HDim_,
           typename DataType_,
@@ -1525,7 +1525,7 @@ template <typename Traits_, typename Arch = void>
 float fmha_batch_prefill_(const ck_tile::stream_config&, fmha_batch_prefill_args);
 
 // This is the public API, will be generated by script
-struct fmha_fwd_traits
+struct sageattn_fwd_traits
 {
     int hdim_q;
     int hdim_v;
@@ -1541,7 +1541,7 @@ struct fmha_fwd_traits
     bool has_sink          = false;
     // TODO: padding check is inside this api
 };
-float fmha_fwd(fmha_fwd_traits, fmha_fwd_args, const ck_tile::stream_config&);
+float sageattn_fwd(sageattn_fwd_traits, sageattn_fwd_args, const ck_tile::stream_config&);
 
 struct fmha_fwd_pagedkv_traits
 {
@@ -1594,7 +1594,7 @@ float fmha_fwd_appendkv(fmha_fwd_appendkv_traits,
                         fmha_fwd_appendkv_args,
                         const ck_tile::stream_config&);
 
-struct fmha_batch_prefill_traits : public fmha_fwd_traits
+struct fmha_batch_prefill_traits : public sageattn_fwd_traits
 {
     ck_tile::BlockAttentionKVCacheMemoryLayoutEnum kv_memory_layout =
         ck_tile::BlockAttentionKVCacheMemoryLayoutEnum::VECTORIZED_LAYOUT;

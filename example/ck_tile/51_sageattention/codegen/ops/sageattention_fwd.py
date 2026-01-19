@@ -122,11 +122,11 @@ using fmha_epilogue =
 using fmha_kernel = {F_kernel}<fmha_pipeline, fmha_epilogue>;
 
 
-using trait = fmha_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode},{F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout},
+using trait = sageattn_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode},{F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout},
                         {F_pipeline_enum}, fmha_mask, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}, {F_sink}>;
 
 template<>
-float fmha_fwd_<trait, {F_arch.tag}>(const ck_tile::stream_config& s, fmha_fwd_args a)
+float sageattn_fwd_<trait, {F_arch.tag}>(const ck_tile::stream_config& s, sageattn_fwd_args a)
 {{
     using k_ = fmha_kernel;
     if(s.log_level_ > 0)
@@ -181,7 +181,7 @@ unsigned get_num_thread_blocks(unsigned batch, unsigned nheads, unsigned max_seq
 """
 SAGEATTN_FWD_API_FUNC_TEMPLATE = """
 namespace {{
-float {F_func_name}([[maybe_unused]] fmha_fwd_traits t, [[maybe_unused]] fmha_fwd_args a, [[maybe_unused]] const ck_tile::stream_config& s) {{
+float {F_func_name}([[maybe_unused]] sageattn_fwd_traits t, [[maybe_unused]] sageattn_fwd_args a, [[maybe_unused]] const ck_tile::stream_config& s) {{
     float r = -1;
 
     [[maybe_unused]] const float min_cu_util_rate = 0.8; // minimum CU utilization rate
@@ -204,8 +204,8 @@ float {F_func_name}([[maybe_unused]] fmha_fwd_traits t, [[maybe_unused]] fmha_fw
 """
 SAGEATTN_FWD_API_FOOTER_TEMPLATE = """
 // Public API entry point - unified for SageAttention  
-float fmha_fwd(fmha_fwd_traits traits, fmha_fwd_args args, const ck_tile::stream_config& config) {
-    return fmha_fwd_impl(traits, args, config);
+float sageattn_fwd(sageattn_fwd_traits traits, sageattn_fwd_args args, const ck_tile::stream_config& config) {
+    return sageattn_fwd_impl(traits, args, config);
 }
 """
 
@@ -226,8 +226,8 @@ SAGEATTN_FWD_API_PER_HDIM_CASE = """{F_if}(t.hdim_q <= {F_hdim} && t.hdim_v <= {
 
 SAGEATTN_FWD_API_INNER_DISPATCH = """{F_if}((t.is_group_mode == {F_mode}) && (t.is_v_rowmajor == {F_vlayout}) && ({F_mask_check}) && (t.bias_type == {F_bias_check}) && (t.has_lse == {F_lse})  && (t.has_dropout == {F_dropout}) && (t.qscale_type == {F_qscale_check}) && (t.skip_min_seqlen_q == {F_skip}) &&(t.has_sink == {F_sink}) &&
         ({F_scheck}) && ({F_seqtune}) && ({F_skcheck}) && ({F_dcheck}) && ({F_dvcheck}) && ({F_constraint})) {{
-    using trait_ = fmha_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode}, {F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout}, {F_pipeline_enum}, {F_mask}, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}, {F_sink}>;
-    return fmha_fwd_<trait_, {F_arch.tag}>(s, a);
+    using trait_ = sageattn_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode}, {F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout}, {F_pipeline_enum}, {F_mask}, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}, {F_sink}>;
+    return sageattn_fwd_<trait_, {F_arch.tag}>(s, a);
 }}
 """
 
@@ -250,7 +250,7 @@ class CppConstraint:
 class SageAttnFwdApiTrait:
     arch: ArchTrait
     pipeline_tag: str
-    # sync with fmha_fwd_traits<>, to generate fallback calls
+    # sync with sageattn_fwd_traits<>, to generate fallback calls
     hdim: str
     dtype: str  # data type
     mode: str  # value from MODE_MAP
@@ -1254,7 +1254,7 @@ def write_fwd_api(
     content = "".join(
         [
             SAGEATTN_FWD_API_HEADER,
-            api_pool.render("fmha_fwd_impl"),
+            api_pool.render("sageattn_fwd_impl"),
             SAGEATTN_FWD_API_FOOTER_TEMPLATE,
         ]
     )

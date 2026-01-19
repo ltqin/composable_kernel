@@ -905,7 +905,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                                                                         : rope_enum::half_rotated)
                                                : rope_enum::none);
         }
-        else // fmha_fwd_traits or fmha_splitkv_traits
+        else // sageattn_fwd_traits or fmha_splitkv_traits
         {
             traits.is_group_mode = (mode == mode_enum::group);
             traits.mask_type     = mask.type;
@@ -913,7 +913,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
             traits.has_sink      = mask.sink > 0 ? true : false;
             traits.has_lse       = lse;
 
-            if constexpr(std::is_same_v<fmha_fwd_traits, std::decay_t<decltype(traits)>>)
+            if constexpr(std::is_same_v<sageattn_fwd_traits, std::decay_t<decltype(traits)>>)
             {
                 traits.has_dropout = (p_drop > 0.0f);
                 traits.qscale_type = qscale.type;
@@ -1051,7 +1051,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
             args.batch_stride_knew = batch_stride_knew;
             args.batch_stride_vnew = batch_stride_vnew;
         }
-        else // fmha_fwd_args or fmha_fwd_splitkv_args
+        else // sageattn_fwd_args or fmha_fwd_splitkv_args
         {
             args.bias_ptr = bias.type == bias_enum::alibi ? alibi_slope_buf.GetDeviceBuffer()
                                                           : bias_buf.GetDeviceBuffer();
@@ -1078,7 +1078,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
             args.sink_size         = mask.sink;
             args.mask_type         = static_cast<ck_tile::index_t>(mask.type);
 
-            if constexpr(std::is_same_v<fmha_fwd_args, std::decay_t<decltype(args)>>)
+            if constexpr(std::is_same_v<sageattn_fwd_args, std::decay_t<decltype(args)>>)
             {
                 args.q_descale_ptr = q_descale_buf.GetDeviceBuffer();
                 args.k_descale_ptr = k_descale_buf.GetDeviceBuffer();
@@ -1262,13 +1262,13 @@ fwd_result sageattention_fwd_run(mode_enum mode,
             return fmha_fwd_splitkv(fmha_splitkv_traits, fmha_splitkv_args, sc);
         }
 #endif // CK_TILE_FMHA_FWD_SPLITKV_API
-        fmha_fwd_traits fmha_traits;
+        sageattn_fwd_traits fmha_traits;
         init_traits(fmha_traits);
 
-        fmha_fwd_args fmha_args;
+        sageattn_fwd_args fmha_args;
         init_args(fmha_args);
 
-        return fmha_fwd(fmha_traits, fmha_args, sc);
+        return sageattn_fwd(fmha_traits, fmha_args, sc);
     };
     const float fwd_ave_time = run_fwd(stream_config);
     if(fwd_ave_time < 0.0f)
