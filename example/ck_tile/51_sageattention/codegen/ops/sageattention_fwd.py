@@ -203,24 +203,10 @@ float {F_func_name}([[maybe_unused]] fmha_fwd_traits t, [[maybe_unused]] fmha_fw
 }} // namespace
 """
 FMHA_FWD_API_FOOTER_TEMPLATE = """
-float fmha_fwd(fmha_fwd_traits traits, fmha_fwd_args args, const ck_tile::stream_config& config) {{
-    const std::string device_name = ck_tile::get_device_name();
-
-    const bool is_swa = (traits.mask_type != mask_enum::no_mask) and
-                        ((0 < args.window_size_left) or (0 < args.window_size_right));
-    const bool can_dispatch_v3 =
-        (device_name.compare(0, 6, "gfx950") == 0) and
-        (traits.data_type.compare("fp16") == 0 or traits.data_type.compare("bf16") == 0) and
-        traits.is_v_rowmajor and (traits.bias_type == bias_enum::no_bias) and
-        (not traits.has_lse) and (not traits.has_dropout) and
-        (traits.qscale_type == quant_scale_enum::no_scale) and (not is_swa) and
-        (args.nhead_q % args.nhead_k == 0) and (args.hdim_q == 128) and (args.hdim_v == 128);
-    if ({F_is_v3_enabled} and can_dispatch_v3) {{
-        return fmha_fwd_v3(traits, args, config);
-    }} else {{
-        return fmha_fwd_v2(traits, args, config);
-    }}
-}}
+// Public API entry point - unified for SageAttention  
+float fmha_fwd(fmha_fwd_traits traits, fmha_fwd_args args, const ck_tile::stream_config& config) {
+    return fmha_fwd_impl(traits, args, config);
+}
 """
 
 FMHA_FWD_API_PER_ARCH = """{F_if}({F_arch.device_name_check}) {{
@@ -300,7 +286,7 @@ class FmhaFwdApiTrait:
     def scheck(self) -> str:
         if self.mode == "group":
             return "true/*group mode spad always true*/"  # group mode only generate spad/skpad == true
-        if self.pipeline_tag in ["qr_async", "qr_async_trload", "qr_async_trload_v3"]:
+        if self.pipeline_tag == "qr_async":
             if self.spad == "t":
                 return "true"  # always support
             else:
@@ -333,11 +319,6 @@ class FmhaFwdApiTrait:
                 return f"true /*a.seqlen_k % {self.bn0} != 0*/"  # TODO: order of get_pipelines() matters! (ugly)
             else:
                 return f"(a.cu_seqlen_k_ptr == nullptr) && (a.seqlen_k != 0 && a.seqlen_k % {self.bn0} == 0)"
-        elif self.pipeline_tag in ["qr_async_trload", "qr_async_trload_v3"]:
-            if self.skpad == "t":
-                return "true"
-            else:
-                return "true"
         else:
             assert False
 
@@ -349,7 +330,7 @@ class FmhaFwdApiTrait:
                 return f"a.hdim_q % {vec} == 0"
             else:
                 assert False
-        elif self.pipeline_tag in ["qr", "qs", "qr_async_trload", "qr_async_trload_v3"]:
+        elif self.pipeline_tag in ["qr", "qs"]:
             bk0submax = K0_MAX_SUBMAX_MAP[self.bk0max]
             if self.dpad == "t":
                 return f"true /*a.hdim_q % {bk0submax} != 0*/"  # TODO: order of get_pipelines() matters! (ugly)
@@ -366,7 +347,7 @@ class FmhaFwdApiTrait:
                 return f"a.hdim_v % {vec} == 0"
             else:
                 assert False
-        elif self.pipeline_tag in ["qr", "qs", "qr_async_trload", "qr_async_trload_v3"]:
+        elif self.pipeline_tag in ["qr", "qs"]:
             bk0submax = K0_MAX_SUBMAX_MAP[self.bk0max]
             if self.dvpad == "t":
                 return f"true /*a.hdim_v % {bk0submax} != 0*/"  # TODO: order of get_pipelines() matters! (ugly)
@@ -638,17 +619,11 @@ class FmhaFwdKernel:
 
     @classmethod
     def _get_cpp_kernel_class_name(cls, pipeline_tag):
-        if pipeline_tag == "qr_async_trload_v3":
-            return "ck_tile::SageAttnFwdV3Kernel"
-        else:
-            return "ck_tile::SageAttnFwdKernel"
+        return "ck_tile::SageAttnFwdKernel"
 
     @classmethod
     def _get_cpp_kargs_creator_func_name(cls, pipeline_tag):
-        if pipeline_tag == "qr_async_trload_v3":
-            return "sageattn_fwd_v3_create_kargs_and_grids"
-        else:
-            return "sageattn_fwd_create_kargs_and_grids"
+        return "sageattn_fwd_create_kargs_and_grids"
 
     def render(self) -> str:
         return type(self)._KERNEL_HEADER + type(self)._KERNEL_BODY_TEMPLATE.format(
@@ -821,7 +796,7 @@ class CompatibilityRuleFactoryGfx9(CompatibilityRuleFactory):
             problem_ctx: ProblemContext, kernel_ctx: KernelContext
         ) -> bool:
             if problem_ctx.dtype != "fp32":
-                # TODO: update if >=gfx11 archs get qr_async and qr_async_trload support
+                # TODO: update if >=gfx11 archs get qr_async support
                 if kernel_ctx.pipeline.tag in cls._AVAILABLE_PIPELINES and (
                     (
                         (problem_ctx.hdim, problem_ctx.hdim_v) == (128, 128)
@@ -832,8 +807,7 @@ class CompatibilityRuleFactoryGfx9(CompatibilityRuleFactory):
                         and kernel_ctx.tile.F_bm0 != 128
                     )
                 ):
-                    # non qr_async_trload only support km0=128 tile size when hdim is not 128
-                    # non qr_async only support kn0=128 tile size when hdim is 128
+                    # qr_async only support kn0=128 tile size when hdim is 128
                     return False
             return True
 
@@ -842,40 +816,7 @@ class CompatibilityRuleFactoryGfx9(CompatibilityRuleFactory):
 
 
 class CompatibilityRuleFactoryGfx950(CompatibilityRuleFactoryGfx9):
-    _AVAILABLE_PIPELINES = (
-        CompatibilityRuleFactoryGfx9._AVAILABLE_PIPELINES
-        | frozenset({"qr_async_trload", "qr_async_trload_v3"})
-    )
-
-    @classmethod
-    def get_rules(cls) -> List[CompatibilityRule]:
-        rules = CompatibilityRuleFactoryGfx9.get_rules()
-
-        def check_tile_pipeline(
-            problem_ctx: ProblemContext, kernel_ctx: KernelContext
-        ) -> bool:
-            if kernel_ctx.pipeline.tag == "qr_async_trload" and (
-                (
-                    (problem_ctx.hdim, problem_ctx.hdim_v) == (128, 128)
-                    and kernel_ctx.tile.F_bn0 == 128
-                )
-                or (
-                    (problem_ctx.hdim, problem_ctx.hdim_v) not in [(64, 64), (128, 128)]
-                )
-            ):
-                return False
-
-            # only qr_async_trload_v3 use km0=256 & 8-warps
-            is_v3_dedicated_tile = (
-                kernel_ctx.tile.F_bm0 == 256
-                and (kernel_ctx.tile.F_rm0 * kernel_ctx.tile.F_rn0 * kernel_ctx.tile.F_rk0) == 8
-                and (kernel_ctx.tile.F_rm1 * kernel_ctx.tile.F_rn1 * kernel_ctx.tile.F_rk1) == 8
-            )  # fmt: skip
-            is_v3_pipeline = kernel_ctx.pipeline.tag == "qr_async_trload_v3"
-            return is_v3_dedicated_tile == is_v3_pipeline
-
-        rules.extend([check_tile_pipeline])
-        return rules
+    pass
 
 
 class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
@@ -1308,24 +1249,11 @@ def write_fwd_api(
     api_pool: FmhaFwdApiPool,
     autogen_dir: Path,
 ) -> None:
-    def accept_only_v3(trait: FmhaFwdApiTrait) -> bool:
-        return trait.pipeline_tag == "qr_async_trload_v3"
-
-    def accept_only_v2(trait: FmhaFwdApiTrait) -> bool:
-        return not accept_only_v3(trait)
-
     content = "".join(
         [
             FMHA_FWD_API_HEADER,
-            api_pool.render("fmha_fwd_v2", filter_fn=accept_only_v2),
-            api_pool.render("fmha_fwd_v3", filter_fn=accept_only_v3),
-            FMHA_FWD_API_FOOTER_TEMPLATE.format(
-                F_is_v3_enabled=BOOL_MAP[
-                    # NOTE: enable v3 pipelines when ready
-                    # 0 < api_pool.get_num_traits(filter_fn=accept_only_v3)
-                    False
-                ]
-            ),
+            api_pool.render("fmha_fwd_impl"),
+            FMHA_FWD_API_FOOTER_TEMPLATE,
         ]
     )
     update_file(autogen_dir / FMHA_FWD_API_FILENAME, content)
