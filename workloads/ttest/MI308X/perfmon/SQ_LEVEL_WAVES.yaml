@@ -1,0 +1,1285 @@
+SQ_LEVEL_WAVES_ACCUM:
+  architectures:
+    gfx942/gfx941/gfx940/gfx90a:
+      expression: accumulate(SQ_LEVEL_WAVES, HIGH_RES)
+  description: SQ_LEVEL_WAVES accumulation
+TCC_EA0_ATOMIC_LEVEL[0]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[0]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 0th channel
+TCC_EA0_ATOMIC_LEVEL[10]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[10]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 10th channel
+TCC_EA0_ATOMIC_LEVEL[11]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[11]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 11th channel
+TCC_EA0_ATOMIC_LEVEL[12]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[12]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 12th channel
+TCC_EA0_ATOMIC_LEVEL[13]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[13]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 13th channel
+TCC_EA0_ATOMIC_LEVEL[14]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[14]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 14th channel
+TCC_EA0_ATOMIC_LEVEL[15]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[15]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 15th channel
+TCC_EA0_ATOMIC_LEVEL[16]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[0]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 0th channel
+TCC_EA0_ATOMIC_LEVEL[17]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[1]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 1th channel
+TCC_EA0_ATOMIC_LEVEL[18]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[2]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 2th channel
+TCC_EA0_ATOMIC_LEVEL[19]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[3]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 3th channel
+TCC_EA0_ATOMIC_LEVEL[1]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[1]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 1th channel
+TCC_EA0_ATOMIC_LEVEL[20]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[4]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 4th channel
+TCC_EA0_ATOMIC_LEVEL[21]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[5]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 5th channel
+TCC_EA0_ATOMIC_LEVEL[22]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[6]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 6th channel
+TCC_EA0_ATOMIC_LEVEL[23]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[7]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 7th channel
+TCC_EA0_ATOMIC_LEVEL[24]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[8]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 8th channel
+TCC_EA0_ATOMIC_LEVEL[25]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[9]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 9th channel
+TCC_EA0_ATOMIC_LEVEL[26]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[10]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 10th channel
+TCC_EA0_ATOMIC_LEVEL[27]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[11]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 11th channel
+TCC_EA0_ATOMIC_LEVEL[28]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[12]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 12th channel
+TCC_EA0_ATOMIC_LEVEL[29]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[13]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 13th channel
+TCC_EA0_ATOMIC_LEVEL[2]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[2]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 2th channel
+TCC_EA0_ATOMIC_LEVEL[30]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[14]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 14th channel
+TCC_EA0_ATOMIC_LEVEL[31]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[15]])
+  description: TCC_EA0_ATOMIC_LEVEL on 1th XCC and 15th channel
+TCC_EA0_ATOMIC_LEVEL[32]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[0]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 0th channel
+TCC_EA0_ATOMIC_LEVEL[33]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[1]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 1th channel
+TCC_EA0_ATOMIC_LEVEL[34]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[2]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 2th channel
+TCC_EA0_ATOMIC_LEVEL[35]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[3]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 3th channel
+TCC_EA0_ATOMIC_LEVEL[36]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[4]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 4th channel
+TCC_EA0_ATOMIC_LEVEL[37]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[5]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 5th channel
+TCC_EA0_ATOMIC_LEVEL[38]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[6]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 6th channel
+TCC_EA0_ATOMIC_LEVEL[39]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[7]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 7th channel
+TCC_EA0_ATOMIC_LEVEL[3]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[3]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 3th channel
+TCC_EA0_ATOMIC_LEVEL[40]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[8]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 8th channel
+TCC_EA0_ATOMIC_LEVEL[41]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[9]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 9th channel
+TCC_EA0_ATOMIC_LEVEL[42]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[10]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 10th channel
+TCC_EA0_ATOMIC_LEVEL[43]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[11]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 11th channel
+TCC_EA0_ATOMIC_LEVEL[44]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[12]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 12th channel
+TCC_EA0_ATOMIC_LEVEL[45]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[13]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 13th channel
+TCC_EA0_ATOMIC_LEVEL[46]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[14]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 14th channel
+TCC_EA0_ATOMIC_LEVEL[47]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[15]])
+  description: TCC_EA0_ATOMIC_LEVEL on 2th XCC and 15th channel
+TCC_EA0_ATOMIC_LEVEL[48]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[0]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 0th channel
+TCC_EA0_ATOMIC_LEVEL[49]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[1]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 1th channel
+TCC_EA0_ATOMIC_LEVEL[4]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[4]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 4th channel
+TCC_EA0_ATOMIC_LEVEL[50]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[2]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 2th channel
+TCC_EA0_ATOMIC_LEVEL[51]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[3]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 3th channel
+TCC_EA0_ATOMIC_LEVEL[52]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[4]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 4th channel
+TCC_EA0_ATOMIC_LEVEL[53]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[5]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 5th channel
+TCC_EA0_ATOMIC_LEVEL[54]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[6]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 6th channel
+TCC_EA0_ATOMIC_LEVEL[55]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[7]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 7th channel
+TCC_EA0_ATOMIC_LEVEL[56]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[8]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 8th channel
+TCC_EA0_ATOMIC_LEVEL[57]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[9]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 9th channel
+TCC_EA0_ATOMIC_LEVEL[58]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[10]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 10th channel
+TCC_EA0_ATOMIC_LEVEL[59]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[11]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 11th channel
+TCC_EA0_ATOMIC_LEVEL[5]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[5]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 5th channel
+TCC_EA0_ATOMIC_LEVEL[60]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[12]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 12th channel
+TCC_EA0_ATOMIC_LEVEL[61]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[13]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 13th channel
+TCC_EA0_ATOMIC_LEVEL[62]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[14]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 14th channel
+TCC_EA0_ATOMIC_LEVEL[63]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[15]])
+  description: TCC_EA0_ATOMIC_LEVEL on 3th XCC and 15th channel
+TCC_EA0_ATOMIC_LEVEL[6]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[6]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 6th channel
+TCC_EA0_ATOMIC_LEVEL[7]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[7]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 7th channel
+TCC_EA0_ATOMIC_LEVEL[8]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[8]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 8th channel
+TCC_EA0_ATOMIC_LEVEL[9]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_ATOMIC_LEVEL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[9]])
+  description: TCC_EA0_ATOMIC_LEVEL on 0th XCC and 9th channel
+TCC_EA0_WRREQ[0]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[0]])
+  description: TCC_EA0_WRREQ on 0th XCC and 0th channel
+TCC_EA0_WRREQ[10]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[10]])
+  description: TCC_EA0_WRREQ on 0th XCC and 10th channel
+TCC_EA0_WRREQ[11]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[11]])
+  description: TCC_EA0_WRREQ on 0th XCC and 11th channel
+TCC_EA0_WRREQ[12]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[12]])
+  description: TCC_EA0_WRREQ on 0th XCC and 12th channel
+TCC_EA0_WRREQ[13]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[13]])
+  description: TCC_EA0_WRREQ on 0th XCC and 13th channel
+TCC_EA0_WRREQ[14]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[14]])
+  description: TCC_EA0_WRREQ on 0th XCC and 14th channel
+TCC_EA0_WRREQ[15]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[15]])
+  description: TCC_EA0_WRREQ on 0th XCC and 15th channel
+TCC_EA0_WRREQ[16]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[0]])
+  description: TCC_EA0_WRREQ on 1th XCC and 0th channel
+TCC_EA0_WRREQ[17]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[1]])
+  description: TCC_EA0_WRREQ on 1th XCC and 1th channel
+TCC_EA0_WRREQ[18]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[2]])
+  description: TCC_EA0_WRREQ on 1th XCC and 2th channel
+TCC_EA0_WRREQ[19]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[3]])
+  description: TCC_EA0_WRREQ on 1th XCC and 3th channel
+TCC_EA0_WRREQ[1]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[1]])
+  description: TCC_EA0_WRREQ on 0th XCC and 1th channel
+TCC_EA0_WRREQ[20]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[4]])
+  description: TCC_EA0_WRREQ on 1th XCC and 4th channel
+TCC_EA0_WRREQ[21]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[5]])
+  description: TCC_EA0_WRREQ on 1th XCC and 5th channel
+TCC_EA0_WRREQ[22]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[6]])
+  description: TCC_EA0_WRREQ on 1th XCC and 6th channel
+TCC_EA0_WRREQ[23]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[7]])
+  description: TCC_EA0_WRREQ on 1th XCC and 7th channel
+TCC_EA0_WRREQ[24]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[8]])
+  description: TCC_EA0_WRREQ on 1th XCC and 8th channel
+TCC_EA0_WRREQ[25]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[9]])
+  description: TCC_EA0_WRREQ on 1th XCC and 9th channel
+TCC_EA0_WRREQ[26]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[10]])
+  description: TCC_EA0_WRREQ on 1th XCC and 10th channel
+TCC_EA0_WRREQ[27]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[11]])
+  description: TCC_EA0_WRREQ on 1th XCC and 11th channel
+TCC_EA0_WRREQ[28]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[12]])
+  description: TCC_EA0_WRREQ on 1th XCC and 12th channel
+TCC_EA0_WRREQ[29]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[13]])
+  description: TCC_EA0_WRREQ on 1th XCC and 13th channel
+TCC_EA0_WRREQ[2]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[2]])
+  description: TCC_EA0_WRREQ on 0th XCC and 2th channel
+TCC_EA0_WRREQ[30]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[14]])
+  description: TCC_EA0_WRREQ on 1th XCC and 14th channel
+TCC_EA0_WRREQ[31]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[15]])
+  description: TCC_EA0_WRREQ on 1th XCC and 15th channel
+TCC_EA0_WRREQ[32]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[0]])
+  description: TCC_EA0_WRREQ on 2th XCC and 0th channel
+TCC_EA0_WRREQ[33]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[1]])
+  description: TCC_EA0_WRREQ on 2th XCC and 1th channel
+TCC_EA0_WRREQ[34]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[2]])
+  description: TCC_EA0_WRREQ on 2th XCC and 2th channel
+TCC_EA0_WRREQ[35]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[3]])
+  description: TCC_EA0_WRREQ on 2th XCC and 3th channel
+TCC_EA0_WRREQ[36]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[4]])
+  description: TCC_EA0_WRREQ on 2th XCC and 4th channel
+TCC_EA0_WRREQ[37]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[5]])
+  description: TCC_EA0_WRREQ on 2th XCC and 5th channel
+TCC_EA0_WRREQ[38]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[6]])
+  description: TCC_EA0_WRREQ on 2th XCC and 6th channel
+TCC_EA0_WRREQ[39]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[7]])
+  description: TCC_EA0_WRREQ on 2th XCC and 7th channel
+TCC_EA0_WRREQ[3]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[3]])
+  description: TCC_EA0_WRREQ on 0th XCC and 3th channel
+TCC_EA0_WRREQ[40]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[8]])
+  description: TCC_EA0_WRREQ on 2th XCC and 8th channel
+TCC_EA0_WRREQ[41]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[9]])
+  description: TCC_EA0_WRREQ on 2th XCC and 9th channel
+TCC_EA0_WRREQ[42]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[10]])
+  description: TCC_EA0_WRREQ on 2th XCC and 10th channel
+TCC_EA0_WRREQ[43]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[11]])
+  description: TCC_EA0_WRREQ on 2th XCC and 11th channel
+TCC_EA0_WRREQ[44]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[12]])
+  description: TCC_EA0_WRREQ on 2th XCC and 12th channel
+TCC_EA0_WRREQ[45]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[13]])
+  description: TCC_EA0_WRREQ on 2th XCC and 13th channel
+TCC_EA0_WRREQ[46]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[14]])
+  description: TCC_EA0_WRREQ on 2th XCC and 14th channel
+TCC_EA0_WRREQ[47]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[15]])
+  description: TCC_EA0_WRREQ on 2th XCC and 15th channel
+TCC_EA0_WRREQ[48]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[0]])
+  description: TCC_EA0_WRREQ on 3th XCC and 0th channel
+TCC_EA0_WRREQ[49]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[1]])
+  description: TCC_EA0_WRREQ on 3th XCC and 1th channel
+TCC_EA0_WRREQ[4]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[4]])
+  description: TCC_EA0_WRREQ on 0th XCC and 4th channel
+TCC_EA0_WRREQ[50]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[2]])
+  description: TCC_EA0_WRREQ on 3th XCC and 2th channel
+TCC_EA0_WRREQ[51]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[3]])
+  description: TCC_EA0_WRREQ on 3th XCC and 3th channel
+TCC_EA0_WRREQ[52]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[4]])
+  description: TCC_EA0_WRREQ on 3th XCC and 4th channel
+TCC_EA0_WRREQ[53]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[5]])
+  description: TCC_EA0_WRREQ on 3th XCC and 5th channel
+TCC_EA0_WRREQ[54]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[6]])
+  description: TCC_EA0_WRREQ on 3th XCC and 6th channel
+TCC_EA0_WRREQ[55]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[7]])
+  description: TCC_EA0_WRREQ on 3th XCC and 7th channel
+TCC_EA0_WRREQ[56]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[8]])
+  description: TCC_EA0_WRREQ on 3th XCC and 8th channel
+TCC_EA0_WRREQ[57]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[9]])
+  description: TCC_EA0_WRREQ on 3th XCC and 9th channel
+TCC_EA0_WRREQ[58]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[10]])
+  description: TCC_EA0_WRREQ on 3th XCC and 10th channel
+TCC_EA0_WRREQ[59]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[11]])
+  description: TCC_EA0_WRREQ on 3th XCC and 11th channel
+TCC_EA0_WRREQ[5]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[5]])
+  description: TCC_EA0_WRREQ on 0th XCC and 5th channel
+TCC_EA0_WRREQ[60]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[12]])
+  description: TCC_EA0_WRREQ on 3th XCC and 12th channel
+TCC_EA0_WRREQ[61]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[13]])
+  description: TCC_EA0_WRREQ on 3th XCC and 13th channel
+TCC_EA0_WRREQ[62]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[14]])
+  description: TCC_EA0_WRREQ on 3th XCC and 14th channel
+TCC_EA0_WRREQ[63]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[15]])
+  description: TCC_EA0_WRREQ on 3th XCC and 15th channel
+TCC_EA0_WRREQ[6]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[6]])
+  description: TCC_EA0_WRREQ on 0th XCC and 6th channel
+TCC_EA0_WRREQ[7]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[7]])
+  description: TCC_EA0_WRREQ on 0th XCC and 7th channel
+TCC_EA0_WRREQ[8]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[8]])
+  description: TCC_EA0_WRREQ on 0th XCC and 8th channel
+TCC_EA0_WRREQ[9]:
+  architectures:
+    gfx942:
+      expression: select(TCC_EA0_WRREQ,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[9]])
+  description: TCC_EA0_WRREQ on 0th XCC and 9th channel
+TCC_HIT[0]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[0]])
+  description: TCC_HIT on 0th XCC and 0th channel
+TCC_HIT[10]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[10]])
+  description: TCC_HIT on 0th XCC and 10th channel
+TCC_HIT[11]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[11]])
+  description: TCC_HIT on 0th XCC and 11th channel
+TCC_HIT[12]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[12]])
+  description: TCC_HIT on 0th XCC and 12th channel
+TCC_HIT[13]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[13]])
+  description: TCC_HIT on 0th XCC and 13th channel
+TCC_HIT[14]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[14]])
+  description: TCC_HIT on 0th XCC and 14th channel
+TCC_HIT[15]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[15]])
+  description: TCC_HIT on 0th XCC and 15th channel
+TCC_HIT[16]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[0]])
+  description: TCC_HIT on 1th XCC and 0th channel
+TCC_HIT[17]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[1]])
+  description: TCC_HIT on 1th XCC and 1th channel
+TCC_HIT[18]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[2]])
+  description: TCC_HIT on 1th XCC and 2th channel
+TCC_HIT[19]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[3]])
+  description: TCC_HIT on 1th XCC and 3th channel
+TCC_HIT[1]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[1]])
+  description: TCC_HIT on 0th XCC and 1th channel
+TCC_HIT[20]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[4]])
+  description: TCC_HIT on 1th XCC and 4th channel
+TCC_HIT[21]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[5]])
+  description: TCC_HIT on 1th XCC and 5th channel
+TCC_HIT[22]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[6]])
+  description: TCC_HIT on 1th XCC and 6th channel
+TCC_HIT[23]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[7]])
+  description: TCC_HIT on 1th XCC and 7th channel
+TCC_HIT[24]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[8]])
+  description: TCC_HIT on 1th XCC and 8th channel
+TCC_HIT[25]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[9]])
+  description: TCC_HIT on 1th XCC and 9th channel
+TCC_HIT[26]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[10]])
+  description: TCC_HIT on 1th XCC and 10th channel
+TCC_HIT[27]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[11]])
+  description: TCC_HIT on 1th XCC and 11th channel
+TCC_HIT[28]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[12]])
+  description: TCC_HIT on 1th XCC and 12th channel
+TCC_HIT[29]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[13]])
+  description: TCC_HIT on 1th XCC and 13th channel
+TCC_HIT[2]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[2]])
+  description: TCC_HIT on 0th XCC and 2th channel
+TCC_HIT[30]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[14]])
+  description: TCC_HIT on 1th XCC and 14th channel
+TCC_HIT[31]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[15]])
+  description: TCC_HIT on 1th XCC and 15th channel
+TCC_HIT[32]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[0]])
+  description: TCC_HIT on 2th XCC and 0th channel
+TCC_HIT[33]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[1]])
+  description: TCC_HIT on 2th XCC and 1th channel
+TCC_HIT[34]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[2]])
+  description: TCC_HIT on 2th XCC and 2th channel
+TCC_HIT[35]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[3]])
+  description: TCC_HIT on 2th XCC and 3th channel
+TCC_HIT[36]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[4]])
+  description: TCC_HIT on 2th XCC and 4th channel
+TCC_HIT[37]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[5]])
+  description: TCC_HIT on 2th XCC and 5th channel
+TCC_HIT[38]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[6]])
+  description: TCC_HIT on 2th XCC and 6th channel
+TCC_HIT[39]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[7]])
+  description: TCC_HIT on 2th XCC and 7th channel
+TCC_HIT[3]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[3]])
+  description: TCC_HIT on 0th XCC and 3th channel
+TCC_HIT[40]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[8]])
+  description: TCC_HIT on 2th XCC and 8th channel
+TCC_HIT[41]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[9]])
+  description: TCC_HIT on 2th XCC and 9th channel
+TCC_HIT[42]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[10]])
+  description: TCC_HIT on 2th XCC and 10th channel
+TCC_HIT[43]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[11]])
+  description: TCC_HIT on 2th XCC and 11th channel
+TCC_HIT[44]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[12]])
+  description: TCC_HIT on 2th XCC and 12th channel
+TCC_HIT[45]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[13]])
+  description: TCC_HIT on 2th XCC and 13th channel
+TCC_HIT[46]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[14]])
+  description: TCC_HIT on 2th XCC and 14th channel
+TCC_HIT[47]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[15]])
+  description: TCC_HIT on 2th XCC and 15th channel
+TCC_HIT[48]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[0]])
+  description: TCC_HIT on 3th XCC and 0th channel
+TCC_HIT[49]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[1]])
+  description: TCC_HIT on 3th XCC and 1th channel
+TCC_HIT[4]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[4]])
+  description: TCC_HIT on 0th XCC and 4th channel
+TCC_HIT[50]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[2]])
+  description: TCC_HIT on 3th XCC and 2th channel
+TCC_HIT[51]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[3]])
+  description: TCC_HIT on 3th XCC and 3th channel
+TCC_HIT[52]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[4]])
+  description: TCC_HIT on 3th XCC and 4th channel
+TCC_HIT[53]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[5]])
+  description: TCC_HIT on 3th XCC and 5th channel
+TCC_HIT[54]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[6]])
+  description: TCC_HIT on 3th XCC and 6th channel
+TCC_HIT[55]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[7]])
+  description: TCC_HIT on 3th XCC and 7th channel
+TCC_HIT[56]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[8]])
+  description: TCC_HIT on 3th XCC and 8th channel
+TCC_HIT[57]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[9]])
+  description: TCC_HIT on 3th XCC and 9th channel
+TCC_HIT[58]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[10]])
+  description: TCC_HIT on 3th XCC and 10th channel
+TCC_HIT[59]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[11]])
+  description: TCC_HIT on 3th XCC and 11th channel
+TCC_HIT[5]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[5]])
+  description: TCC_HIT on 0th XCC and 5th channel
+TCC_HIT[60]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[12]])
+  description: TCC_HIT on 3th XCC and 12th channel
+TCC_HIT[61]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[13]])
+  description: TCC_HIT on 3th XCC and 13th channel
+TCC_HIT[62]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[14]])
+  description: TCC_HIT on 3th XCC and 14th channel
+TCC_HIT[63]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[15]])
+  description: TCC_HIT on 3th XCC and 15th channel
+TCC_HIT[6]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[6]])
+  description: TCC_HIT on 0th XCC and 6th channel
+TCC_HIT[7]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[7]])
+  description: TCC_HIT on 0th XCC and 7th channel
+TCC_HIT[8]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[8]])
+  description: TCC_HIT on 0th XCC and 8th channel
+TCC_HIT[9]:
+  architectures:
+    gfx942:
+      expression: select(TCC_HIT,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[9]])
+  description: TCC_HIT on 0th XCC and 9th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[0]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[0]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 0th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[10]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[10]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 10th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[11]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[11]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 11th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[12]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[12]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 12th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[13]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[13]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 13th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[14]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[14]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 14th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[15]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[15]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 15th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[16]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[0]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 0th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[17]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[1]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 1th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[18]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[2]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 2th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[19]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[3]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 3th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[1]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[1]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 1th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[20]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[4]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 4th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[21]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[5]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 5th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[22]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[6]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 6th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[23]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[7]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 7th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[24]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[8]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 8th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[25]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[9]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 9th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[26]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[10]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 10th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[27]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[11]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 11th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[28]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[12]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 12th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[29]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[13]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 13th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[2]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[2]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 2th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[30]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[14]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 14th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[31]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[1], DIMENSION_INSTANCE=[15]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 1th XCC and 15th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[32]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[0]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 0th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[33]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[1]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 1th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[34]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[2]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 2th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[35]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[3]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 3th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[36]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[4]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 4th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[37]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[5]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 5th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[38]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[6]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 6th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[39]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[7]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 7th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[3]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[3]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 3th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[40]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[8]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 8th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[41]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[9]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 9th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[42]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[10]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 10th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[43]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[11]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 11th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[44]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[12]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 12th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[45]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[13]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 13th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[46]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[14]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 14th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[47]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[2], DIMENSION_INSTANCE=[15]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 2th XCC and 15th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[48]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[0]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 0th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[49]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[1]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 1th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[4]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[4]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 4th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[50]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[2]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 2th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[51]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[3]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 3th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[52]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[4]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 4th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[53]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[5]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 5th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[54]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[6]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 6th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[55]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[7]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 7th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[56]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[8]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 8th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[57]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[9]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 9th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[58]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[10]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 10th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[59]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[11]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 11th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[5]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[5]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 5th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[60]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[12]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 12th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[61]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[13]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 13th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[62]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[14]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 14th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[63]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[3], DIMENSION_INSTANCE=[15]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 3th XCC and 15th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[6]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[6]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 6th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[7]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[7]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 7th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[8]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[8]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 8th channel
+TCC_TOO_MANY_EA_WRREQS_STALL[9]:
+  architectures:
+    gfx942:
+      expression: select(TCC_TOO_MANY_EA_WRREQS_STALL,[DIMENSION_XCC=[0], DIMENSION_INSTANCE=[9]])
+  description: TCC_TOO_MANY_EA_WRREQS_STALL on 0th XCC and 9th channel

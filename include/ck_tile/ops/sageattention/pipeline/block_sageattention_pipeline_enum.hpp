@@ -10,9 +10,6 @@ enum class BlockSageAttnPipelineEnum
 {
     QRKSVS = 0,
     QRKSVS_ASYNC,
-    QSKSVS,
-    QRKSVS_ASYNC_TRLOAD,
-    QRKSVS_ASYNC_TRLOAD_V3,
 };
 
 template <BlockSageAttnPipelineEnum>

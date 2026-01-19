@@ -20,10 +20,6 @@
 #include <utility>
 #include <vector>
 
-#if CK_TILE_FMHA_FWD_APPENDKV_API && !CK_TILE_FMHA_FWD_SPLITKV_API
-#error "we should enable fmha_fwd_splitkv() api in order to cooperate with fmha_fwd_appendkv()"
-#endif
-
 enum class fwd_result
 {
     success,
@@ -200,7 +196,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                                  bool drop_prefs,
                                  std::string mask_str,
                                  std::string qscale_str,
-                                 bool is_rotary_interleaved,
+                                 [[maybe_unused]] bool is_rotary_interleaved,
                                  ck_tile::index_t num_splits,
                                  std::string init_method,
                                  uint32_t seed,
@@ -242,14 +238,12 @@ fwd_result sageattention_fwd_run(mode_enum mode,
     if(hdim_v < 0)
         hdim_v = hdim_q;
 
-#if !CK_TILE_FMHA_FWD_APPENDKV_API
+    // SageAttention doesn't support appendkv
     if(seqlen_knew != 0)
     {
-        std::cerr << "fmha_fwd_appendkv() is not enabled. ignoring the 's_knew' option"
-                  << std::endl;
+        std::cerr << "appendkv is not supported. ignoring the 's_knew' option" << std::endl;
         seqlen_knew = 0;
     }
-#endif
     if(seqlen_knew < 0)
     {
         seqlen_knew = randint<ck_tile::index_t>(1, seqlen_qs[0], random_engine);
@@ -264,20 +258,11 @@ fwd_result sageattention_fwd_run(mode_enum mode,
             return fwd_result::invalid_args;
         }
     }
-#if !CK_TILE_FMHA_FWD_APPENDKV_API
     else if(0 < rotary_dim)
     {
         std::cerr << "rotary embedding is not supported. ignoring the 'rotary_dim' option"
                   << std::endl;
         rotary_dim = 0;
-    }
-#endif
-    // to use fmha_fwd_appendkv(), make sure it's in batch mode
-    const bool need_append_kvcache = (0 < seqlen_knew || 0 < rotary_dim);
-    if(need_append_kvcache && mode == mode_enum::group)
-    {
-        std::cerr << "fmha_fwd_appendkv() will be invoked. ignoring the 'mode' option" << std::endl;
-        mode = mode_enum::batch;
     }
     if(!(rotary_dim <= hdim_q))
     {
@@ -290,15 +275,13 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         return fwd_result::invalid_args;
     }
 
-#if(!(CK_TILE_FMHA_FWD_APPENDKV_API || CK_TILE_FMHA_FWD_SPLITKV_API || \
-      CK_TILE_FMHA_FWD_PAGEDKV_API))
+    // SageAttention doesn't support paged-kvcache
     if(0 < page_block_size)
     {
         std::cerr << "paged-kvcache is not supported. ignoring the 'page_block_size' option"
                   << std::endl;
         page_block_size = 0;
     }
-#endif
     if(!(page_block_size % 128 == 0))
     {
         std::cerr << "only paged-kvcache block size divisible by 128 are currently supported"
@@ -306,33 +289,14 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         return fwd_result::invalid_args;
     }
 
-#if !(CK_TILE_FMHA_FWD_APPENDKV_API || CK_TILE_FMHA_FWD_SPLITKV_API || CK_TILE_FMHA_FWD_PAGEDKV_API)
+    // SageAttention doesn't support split-kv or cache_batch_idx
     if(use_cache_batch_idx)
     {
         std::cerr << "split-kv is not supported. ignoring the 'cache_batch_idx' option"
                   << std::endl;
         use_cache_batch_idx = false;
     }
-#else
-    if(use_cache_batch_idx)
-    {
-        if(0 < page_block_size)
-        {
-            std::cerr << "paged-kvcache does not support cache_batch_idx. ignoring the "
-                         "'cache_batch_idx' option"
-                      << std::endl;
-            use_cache_batch_idx = false;
-        }
-        else if(mode == mode_enum::group)
-        {
-            std::cerr << "group mode will not use cache_batch_idx. ignoring the "
-                         "'cache_batch_idx' option"
-                      << std::endl;
-            use_cache_batch_idx = false;
-        }
-    }
-#endif
-    const bool use_kvcache = (need_append_kvcache || use_cache_batch_idx || 0 < page_block_size);
+    const bool use_kvcache = (use_cache_batch_idx || 0 < page_block_size);
 
     // Reject unsupported padding usage in special pipelines (appendkv / splitkv / pagedkv)
     const bool has_group_q_padding =
@@ -363,7 +327,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                                  seqlen_qpads,
                                  seqlen_kpads,
                                  /*seqlen_k_min=*/0 < seqlen_knew ? seqlen_knew : 0,
-                                 need_append_kvcache,
+                                 false, // need_append_kvcache not supported
                                  random_engine);
     for(ck_tile::index_t wb = 0; wb < batch; ++wb)
     {
@@ -416,13 +380,12 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         s_randval = true;
     }
 
-#if !CK_TILE_FMHA_FWD_SPLITKV_API
+    // SageAttention doesn't support split-kv
     if(num_splits != 1)
     {
         std::cerr << "split-kv is not supported. ignoring the 'num_splits' option" << std::endl;
         num_splits = 1;
     }
-#endif
 
     const auto seqstart_q_host              = to_seqstarts(seqlen_qs);
     const auto seqstart_k_host              = to_seqstarts(seqlen_ks);
@@ -513,14 +476,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         std::cerr << "num_splits greater than 128 is not supported" << std::endl;
         return fwd_result::invalid_args;
     }
-#if CK_TILE_FMHA_FWD_SPLITKV_API || CK_TILE_FMHA_FWD_PAGEDKV_API
-    if(0 < p_drop && (1 < num_splits || use_kvcache))
-    {
-        std::cerr << "dropout is not supported by split-kv kernels. ignoring the 'p_drop' option"
-                  << std::endl;
-        p_drop = 0.0f;
-    }
-#endif
 
     static const auto get_lengths = [](bool permute,
                                        ck_tile::index_t b /*batch*/,
@@ -760,8 +715,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                                                        : cuq_cum.size() * sizeof(ck_tile::index_t));
     ck_tile::DeviceMem cu_seqlen_kv_buf(
         cukv_cum.empty() ? 0 : cukv_cum.size() * sizeof(ck_tile::index_t));
-    ck_tile::DeviceMem cache_seqlen_k_buf(
-        need_append_kvcache ? cache_seqlen_ks.size() * sizeof(int32_t) : 0);
+    ck_tile::DeviceMem cache_seqlen_k_buf(0); // appendkv not supported
     ck_tile::DeviceMem rotary_cos_buf(rotary_cos_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem rotary_sin_buf(rotary_sin_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem drop_seed_buf(drop_prefs ? sizeof(uint64_t) : 0);
@@ -794,7 +748,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
     seqlen_k_buf.ToDevice((mode == mode_enum::batch && use_kvcache) || has_group_k_padding
                               ? seqlen_ks.data()
                               : nullptr);
-    cache_seqlen_k_buf.ToDevice(need_append_kvcache ? cache_seqlen_ks.data() : nullptr);
+    // appendkv not supported, no need to transfer cache_seqlen_k
     rotary_cos_buf.ToDevice(rotary_cos_host.data());
     rotary_sin_buf.ToDevice(rotary_sin_host.data());
     drop_seed_buf.ToDevice(drop_prefs ? &drop_seed : nullptr);
@@ -822,27 +776,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
               << ", d:" << hdim_q << "/" << hdim_v << ", scale_s:" << scale_s << ", bias:" << bias
               << ", p_drop:" << p_drop << ", lse:" << lse << ", qscale:" << qscale
               << ", mask:" << mask << ", v:" << (is_v_rowmajor ? "r" : "c");
-#if CK_TILE_FMHA_FWD_APPENDKV_API
-    if(0 < rotary_dim)
-    {
-        std::cout << ", rotary_dim:" << rotary_dim << "("
-                  << (is_rotary_interleaved ? "inter" : "half") << ")";
-    }
-#endif
-#if CK_TILE_FMHA_FWD_SPLITKV_API || CK_TILE_FMHA_FWD_PAGEDKV_API
-    if(1 < num_splits)
-    {
-        std::cout << ", num_splits:" << num_splits;
-    }
-    if(0 < page_block_size)
-    {
-        std::cout << ", page_block_size:" << page_block_size;
-    }
-    if(use_cache_batch_idx)
-    {
-        std::cout << ", cache_batch_idx:" << use_cache_batch_idx;
-    }
-#endif
     // Padding / effective length diagnostic logging
     auto print_vec = [&](const char* label, const std::vector<int>& v) {
         if(v.empty())
@@ -898,32 +831,13 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         traits.hdim_v        = hdim_v;
         traits.data_type     = data_type;
         traits.is_v_rowmajor = is_v_rowmajor;
-
-        if constexpr(std::is_same_v<fmha_fwd_appendkv_traits, std::decay_t<decltype(traits)>>)
-        {
-            traits.rope_type = (0 < rotary_dim ? (is_rotary_interleaved ? rope_enum::interleaved
-                                                                        : rope_enum::half_rotated)
-                                               : rope_enum::none);
-        }
-        else // sageattn_fwd_traits or fmha_splitkv_traits
-        {
-            traits.is_group_mode = (mode == mode_enum::group);
-            traits.mask_type     = mask.type;
-            traits.bias_type     = bias.type;
-            traits.has_sink      = mask.sink > 0 ? true : false;
-            traits.has_lse       = lse;
-
-            if constexpr(std::is_same_v<sageattn_fwd_traits, std::decay_t<decltype(traits)>>)
-            {
-                traits.has_dropout = (p_drop > 0.0f);
-                traits.qscale_type = qscale.type;
-            }
-            else if constexpr(std::is_same_v<fmha_fwd_pagedkv_traits,
-                                             std::decay_t<decltype(traits)>>)
-            {
-                traits.use_pagedkv = (0 < page_block_size);
-            }
-        }
+        traits.is_group_mode = (mode == mode_enum::group);
+        traits.mask_type     = mask.type;
+        traits.bias_type     = bias.type;
+        traits.has_sink      = mask.sink > 0 ? true : false;
+        traits.has_lse       = lse;
+        traits.has_dropout   = (p_drop > 0.0f);
+        traits.qscale_type   = qscale.type;
     };
 
     const auto init_args = [&, k_paddings_ = seqlen_kpads](auto& args) {
@@ -931,73 +845,49 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         ///       seqlen_k] in this example, hence both the 'batch_stride_bias' &
         ///       'nhead_stride_bias' are 0.
         // setup stride_* arguments
-        const ck_tile::index_t stride_q    = (i_perm ? hdim_q : nhead * hdim_q);
-        const ck_tile::index_t stride_k    = (i_perm ? hdim_q : nhead_k * hdim_q);
-        const ck_tile::index_t stride_knew = (i_perm ? hdim_q : nhead_k * hdim_q);
-        const ck_tile::index_t stride_v    = [&]() {
+        const ck_tile::index_t stride_q = (i_perm ? hdim_q : nhead * hdim_q);
+        const ck_tile::index_t stride_k = (i_perm ? hdim_q : nhead_k * hdim_q);
+        const ck_tile::index_t stride_v = [&]() {
             if(is_v_rowmajor)
                 return i_perm ? hdim_v : nhead_k * hdim_v;
             else
                 return 0 < page_block_size ? (i_perm ? page_block_size : nhead_k * page_block_size)
-                                              : (i_perm ? shape_seqlen_k : nhead_k * shape_seqlen_k);
-        }();
-        const ck_tile::index_t stride_vnew = [&]() {
-            if(is_v_rowmajor)
-                return i_perm ? hdim_v : nhead_k * hdim_v;
-            else
-                return i_perm ? seqlen_knew : nhead_k * seqlen_knew;
+                                           : (i_perm ? shape_seqlen_k : nhead_k * shape_seqlen_k);
         }();
         const ck_tile::index_t stride_bias    = (i_perm ? max_seqlen_k : 1 * max_seqlen_k);
         const ck_tile::index_t stride_randval = (max_seqlen_k);
-        const ck_tile::index_t stride_o_acc   = (hdim_v);
         const ck_tile::index_t stride_o       = (o_perm ? hdim_v : nhead * hdim_v);
         // setup nhead_stride_* arguments
         const ck_tile::index_t nhead_stride_q = (i_perm ? shape_seqlen_q * hdim_q : hdim_q);
         const ck_tile::index_t nhead_stride_k =
             (0 < page_block_size ? (i_perm ? page_block_size * hdim_q : hdim_q)
                                  : (i_perm ? shape_seqlen_k * hdim_q : hdim_q));
-        const ck_tile::index_t nhead_stride_knew = (i_perm ? seqlen_knew * hdim_q : hdim_q);
-        const ck_tile::index_t nhead_stride_v    = [&]() {
+        const ck_tile::index_t nhead_stride_v = [&]() {
             if(is_v_rowmajor)
                 return 0 < page_block_size ? (i_perm ? page_block_size * hdim_v : hdim_v)
-                                              : (i_perm ? shape_seqlen_k * hdim_v : hdim_v);
+                                           : (i_perm ? shape_seqlen_k * hdim_v : hdim_v);
             else
                 return 0 < page_block_size ? (i_perm ? hdim_v * page_block_size : page_block_size)
-                                              : (i_perm ? hdim_v * shape_seqlen_k : shape_seqlen_k);
-        }();
-        const ck_tile::index_t nhead_stride_vnew = [&]() {
-            if(is_v_rowmajor)
-                return i_perm ? seqlen_knew * hdim_v : hdim_v;
-            else
-                return i_perm ? hdim_v * seqlen_knew : seqlen_knew;
+                                           : (i_perm ? hdim_v * shape_seqlen_k : shape_seqlen_k);
         }();
         const ck_tile::index_t nhead_stride_bias =
             (i_perm ? 0 * shape_seqlen_q * max_seqlen_k : 0 * max_seqlen_k);
         const ck_tile::index_t nhead_stride_randval = (shape_seqlen_q * max_seqlen_k);
         const ck_tile::index_t nhead_stride_lse     = shape_seqlen_q;
-        const ck_tile::index_t nhead_stride_lse_acc = (num_splits * shape_seqlen_q);
-        const ck_tile::index_t nhead_stride_o_acc   = (num_splits * shape_seqlen_q * hdim_v);
         const ck_tile::index_t nhead_stride_o       = (o_perm ? shape_seqlen_q * hdim_v : hdim_v);
         // setup batch_stride_* arguments
         const ck_tile::index_t batch_stride_q = (nhead * shape_seqlen_q * hdim_q);
         const ck_tile::index_t batch_stride_k =
             (0 < page_block_size ? (nhead_k * page_block_size * hdim_q)
                                  : (nhead_k * shape_seqlen_k * hdim_q));
-        const ck_tile::index_t batch_stride_knew = (nhead_k * seqlen_knew * hdim_q);
         const ck_tile::index_t batch_stride_v =
             (0 < page_block_size ? (nhead_k * hdim_v * page_block_size)
                                  : (nhead_k * hdim_v * shape_seqlen_k));
-        const ck_tile::index_t batch_stride_vnew    = (nhead_k * hdim_v * seqlen_knew);
         const ck_tile::index_t batch_stride_bias    = (0 * nhead * shape_seqlen_q * max_seqlen_k);
         const ck_tile::index_t batch_stride_randval = (nhead * shape_seqlen_q * max_seqlen_k);
         const ck_tile::index_t batch_stride_lse     = (nhead * shape_seqlen_q);
-        const ck_tile::index_t batch_stride_lse_acc = (nhead * num_splits * shape_seqlen_q);
-        const ck_tile::index_t batch_stride_o_acc = (nhead * num_splits * shape_seqlen_q * hdim_v);
-        const ck_tile::index_t batch_stride_o     = (nhead * shape_seqlen_q * hdim_v);
-        const ck_tile::index_t batch_stride_block_table = (max_num_page_blocks / batch);
+        const ck_tile::index_t batch_stride_o       = (nhead * shape_seqlen_q * hdim_v);
         // setup split_stride_* arguments (only used in split-kv kernel)
-        const ck_tile::index_t split_stride_lse_acc = (shape_seqlen_q);
-        const ck_tile::index_t split_stride_o_acc   = (shape_seqlen_q * hdim_v);
 
         args.q_ptr = q_buf.GetDeviceBuffer();
         args.k_ptr = k_buf.GetDeviceBuffer();
@@ -1023,261 +913,114 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         args.batch_stride_k = batch_stride_k;
         args.batch_stride_v = batch_stride_v;
 
-        if constexpr(std::is_same_v<fmha_fwd_appendkv_args, std::decay_t<decltype(args)>>)
+        // Setup sageattn_fwd_args
+        args.bias_ptr = bias.type == bias_enum::alibi ? alibi_slope_buf.GetDeviceBuffer()
+                                                      : bias_buf.GetDeviceBuffer();
+        args.lse_ptr  = lse_buf.GetDeviceBuffer();
+        args.o_ptr    = o_buf.GetDeviceBuffer();
+
+        args.seqlen_k     = shape_seqlen_k; // unused in group mode (or kvcache enabled)
+        args.max_seqlen_q = max_seqlen_q;
+
+        args.scale_s = scale_s;
+
+        args.stride_bias =
+            (bias.type == bias_enum::alibi ? (bias.rank_info == 0 ? 0 : nhead) : stride_bias);
+        args.stride_o          = stride_o;
+        args.nhead_stride_bias = nhead_stride_bias;
+        args.nhead_stride_lse  = nhead_stride_lse;
+        args.nhead_stride_o    = nhead_stride_o;
+        args.batch_stride_bias = batch_stride_bias;
+        args.batch_stride_lse  = batch_stride_lse;
+        args.batch_stride_o    = batch_stride_o;
+
+        args.window_size_left  = mask.left;
+        args.window_size_right = mask.right;
+        args.sink_size         = mask.sink;
+        args.mask_type         = static_cast<ck_tile::index_t>(mask.type);
+
+        args.q_descale_ptr = q_descale_buf.GetDeviceBuffer();
+        args.k_descale_ptr = k_descale_buf.GetDeviceBuffer();
+        args.v_descale_ptr = v_descale_buf.GetDeviceBuffer();
+
+        args.rand_val_ptr = randval_buf.GetDeviceBuffer();
+
+        args.stride_randval       = stride_randval;
+        args.nhead_stride_randval = nhead_stride_randval;
+        args.batch_stride_randval = batch_stride_randval;
+
+        args.p_drop    = p_drop;
+        args.s_randval = s_randval;
+        if(drop_prefs)
         {
-            args.knew_ptr    = knew_buf.GetDeviceBuffer();
-            args.vnew_ptr    = vnew_buf.GetDeviceBuffer();
-            args.seqlen_knew = seqlen_knew;
-
-            args.seqlen_k_ptr = cache_seqlen_k_buf.GetDeviceBuffer();
-
-            args.rotary_cos_ptr = (0 < rotary_dim ? rotary_cos_buf.GetDeviceBuffer() : nullptr);
-            args.rotary_sin_ptr = (0 < rotary_dim ? rotary_sin_buf.GetDeviceBuffer() : nullptr);
-            args.rotary_dim     = rotary_dim;
-            args.has_mask       = (mask.type != mask_enum::no_mask);
-
-            args.block_table_ptr =
-                (0 < page_block_size ? block_table_buf.GetDeviceBuffer() : nullptr);
-            args.batch_stride_block_table = batch_stride_block_table;
-            args.page_block_size          = page_block_size;
-
-            args.cache_batch_idx =
-                (use_cache_batch_idx ? cache_batch_idx_buf.GetDeviceBuffer() : nullptr);
-
-            args.stride_knew       = stride_knew;
-            args.stride_vnew       = stride_vnew;
-            args.nhead_stride_knew = nhead_stride_knew;
-            args.nhead_stride_vnew = nhead_stride_vnew;
-            args.batch_stride_knew = batch_stride_knew;
-            args.batch_stride_vnew = batch_stride_vnew;
+            args.drop_seed_offset =
+                std::make_pair(drop_seed_buf.GetDeviceBuffer(), drop_offset_buf.GetDeviceBuffer());
         }
-        else // sageattn_fwd_args or fmha_fwd_splitkv_args
+        else
         {
-            args.bias_ptr = bias.type == bias_enum::alibi ? alibi_slope_buf.GetDeviceBuffer()
-                                                          : bias_buf.GetDeviceBuffer();
-            args.lse_ptr  = lse_buf.GetDeviceBuffer();
-            args.o_ptr    = o_buf.GetDeviceBuffer();
+            args.drop_seed_offset = std::make_pair(drop_seed, drop_offset);
+        }
 
-            args.seqlen_k     = shape_seqlen_k; // unused in group mode (or kvcache enabled)
-            args.max_seqlen_q = max_seqlen_q;
+        // Sequence length and padding parameters (mode-specific)
+        if(mode == mode_enum::group)
+        {
+            // Group mode: use physical (padded) cumulative starts + logical per-sequence
+            // lengths
 
-            args.scale_s = scale_s;
+            // Physical cumulative starts (including padding)
+            args.seqstart_q_ptr = has_group_q_padding && !seqstart_q_with_padding_host.empty()
+                                      ? seqstart_q_padded_buf.GetDeviceBuffer()
+                                      : seqstart_q.GetDeviceBuffer();
+            args.seqstart_k_ptr = has_group_k_padding && !seqstart_k_with_padding_host.empty()
+                                      ? seqstart_k_padded_buf.GetDeviceBuffer()
+                                      : seqstart_k.GetDeviceBuffer();
 
-            args.stride_bias =
-                (bias.type == bias_enum::alibi ? (bias.rank_info == 0 ? 0 : nhead) : stride_bias);
-            args.stride_o          = stride_o;
-            args.nhead_stride_bias = nhead_stride_bias;
-            args.nhead_stride_lse  = nhead_stride_lse;
-            args.nhead_stride_o    = nhead_stride_o;
-            args.batch_stride_bias = batch_stride_bias;
-            args.batch_stride_lse  = batch_stride_lse;
-            args.batch_stride_o    = batch_stride_o;
+            // Logical (unpadded) per-sequence lengths, used when padding is enabled
+            args.seqlen_q_ptr = (has_group_q_padding && !seqstart_q_with_padding_host.empty())
+                                    ? seqlen_q_buf.GetDeviceBuffer()
+                                    : nullptr;
+            args.seqlen_k_ptr = (has_group_k_padding && !seqstart_k_with_padding_host.empty())
+                                    ? seqlen_k_buf.GetDeviceBuffer()
+                                    : nullptr;
+            // Cumulative lengths not used in group mode
+            args.cu_seqlen_q_ptr = nullptr;
+            args.cu_seqlen_k_ptr = nullptr;
+        }
+        else // mode == mode_enum::batch
+        {
+            // Batch mode: use cumulative logical lengths for tail padding
 
-            args.window_size_left  = mask.left;
-            args.window_size_right = mask.right;
-            args.sink_size         = mask.sink;
-            args.mask_type         = static_cast<ck_tile::index_t>(mask.type);
+            // seqstart pointers not used in batch mode
+            args.seqstart_q_ptr = nullptr;
+            args.seqstart_k_ptr = nullptr;
 
-            if constexpr(std::is_same_v<sageattn_fwd_args, std::decay_t<decltype(args)>>)
-            {
-                args.q_descale_ptr = q_descale_buf.GetDeviceBuffer();
-                args.k_descale_ptr = k_descale_buf.GetDeviceBuffer();
-                args.v_descale_ptr = v_descale_buf.GetDeviceBuffer();
+            // seqlen_q_ptr/seqlen_k_ptr not used in batch mode
+            args.seqlen_q_ptr = nullptr;
+            args.seqlen_k_ptr = nullptr;
 
-                args.rand_val_ptr = randval_buf.GetDeviceBuffer();
-
-                args.stride_randval       = stride_randval;
-                args.nhead_stride_randval = nhead_stride_randval;
-                args.batch_stride_randval = batch_stride_randval;
-
-                args.p_drop    = p_drop;
-                args.s_randval = s_randval;
-                if(drop_prefs)
-                {
-                    args.drop_seed_offset = std::make_pair(drop_seed_buf.GetDeviceBuffer(),
-                                                           drop_offset_buf.GetDeviceBuffer());
-                }
-                else
-                {
-                    args.drop_seed_offset = std::make_pair(drop_seed, drop_offset);
-                }
-
-                // Sequence length and padding parameters (mode-specific)
-                if(mode == mode_enum::group)
-                {
-                    // Group mode: use physical (padded) cumulative starts + logical per-sequence
-                    // lengths
-
-                    // Physical cumulative starts (including padding)
-                    args.seqstart_q_ptr =
-                        has_group_q_padding && !seqstart_q_with_padding_host.empty()
-                            ? seqstart_q_padded_buf.GetDeviceBuffer()
-                            : seqstart_q.GetDeviceBuffer();
-                    args.seqstart_k_ptr =
-                        has_group_k_padding && !seqstart_k_with_padding_host.empty()
-                            ? seqstart_k_padded_buf.GetDeviceBuffer()
-                            : seqstart_k.GetDeviceBuffer();
-
-                    // Logical (unpadded) per-sequence lengths, used when padding is enabled
-                    args.seqlen_q_ptr =
-                        (has_group_q_padding && !seqstart_q_with_padding_host.empty())
-                            ? seqlen_q_buf.GetDeviceBuffer()
-                            : nullptr;
-                    args.seqlen_k_ptr =
-                        (has_group_k_padding && !seqstart_k_with_padding_host.empty())
-                            ? seqlen_k_buf.GetDeviceBuffer()
-                            : nullptr;
-                    // Cumulative lengths not used in group mode
-                    args.cu_seqlen_q_ptr = nullptr;
-                    args.cu_seqlen_k_ptr = nullptr;
-                }
-                else // mode == mode_enum::batch
-                {
-                    // Batch mode: use cumulative logical lengths for tail padding
-
-                    // seqstart pointers not used in batch mode
-                    args.seqstart_q_ptr = nullptr;
-                    args.seqstart_k_ptr = nullptr;
-
-                    // seqlen_q_ptr/seqlen_k_ptr not used in batch mode
-                    args.seqlen_q_ptr = nullptr;
-                    args.seqlen_k_ptr = nullptr;
-
-                    // Cumulative logical lengths for effective length handling
-                    args.cu_seqlen_q_ptr = has_batch_q_padding && !cuq_cum.empty()
-                                               ? cu_seqlen_q_buf.GetDeviceBuffer()
-                                               : nullptr;
-                    args.cu_seqlen_k_ptr = has_batch_k_padding && !cukv_cum.empty()
-                                               ? cu_seqlen_kv_buf.GetDeviceBuffer()
-                                               : nullptr;
-                }
-            }
-            else if constexpr(std::is_same_v<fmha_fwd_splitkv_args, std::decay_t<decltype(args)>>)
-            {
-                args.lse_acc_ptr = lse_acc_buf.GetDeviceBuffer();
-                args.o_acc_ptr   = o_acc_buf.GetDeviceBuffer();
-
-                args.block_table_ptr =
-                    (0 < page_block_size ? block_table_buf.GetDeviceBuffer() : nullptr);
-                args.batch_stride_block_table = batch_stride_block_table;
-                args.page_block_size          = page_block_size;
-                args.is_gappy = false; // use 'false' for flash-attention integration
-
-                args.cache_batch_idx =
-                    (use_cache_batch_idx ? cache_batch_idx_buf.GetDeviceBuffer() : nullptr);
-
-                args.num_splits = num_splits;
-
-                args.stride_o_acc         = stride_o_acc;
-                args.nhead_stride_lse_acc = nhead_stride_lse_acc;
-                args.nhead_stride_o_acc   = nhead_stride_o_acc;
-                args.batch_stride_lse_acc = batch_stride_lse_acc;
-                args.batch_stride_o_acc   = batch_stride_o_acc;
-                args.split_stride_lse_acc = split_stride_lse_acc;
-                args.split_stride_o_acc   = split_stride_o_acc;
-
-                args.seqstart_q_ptr =
-                    (mode == mode_enum::group ? seqstart_q.GetDeviceBuffer() : nullptr);
-                args.seqstart_k_ptr =
-                    (mode == mode_enum::group ? seqstart_k.GetDeviceBuffer() : nullptr);
-                args.seqlen_k_ptr =
-                    ((mode == mode_enum::batch && use_kvcache) || 0 <= k_paddings_[0]
-                         ? seqlen_k_buf.GetDeviceBuffer()
-                         : nullptr);
-            }
-            else if constexpr(std::is_same_v<fmha_fwd_pagedkv_args, std::decay_t<decltype(args)>>)
-            {
-                args.block_table_ptr =
-                    (0 < page_block_size ? block_table_buf.GetDeviceBuffer() : nullptr);
-                args.batch_stride_block_table = batch_stride_block_table;
-                args.page_block_size          = page_block_size;
-                args.is_gappy = false; // use 'false' for flash-attention integration
-
-                args.cache_batch_idx =
-                    (use_cache_batch_idx ? cache_batch_idx_buf.GetDeviceBuffer() : nullptr);
-
-                args.seqstart_q_ptr =
-                    (mode == mode_enum::group ? seqstart_q.GetDeviceBuffer() : nullptr);
-                args.seqstart_k_ptr =
-                    (mode == mode_enum::group ? seqstart_k.GetDeviceBuffer() : nullptr);
-                args.seqlen_k_ptr =
-                    ((mode == mode_enum::batch && use_kvcache) || 0 <= k_paddings_[0]
-                         ? seqlen_k_buf.GetDeviceBuffer()
-                         : nullptr);
-            }
+            // Cumulative logical lengths for effective length handling
+            args.cu_seqlen_q_ptr = has_batch_q_padding && !cuq_cum.empty()
+                                       ? cu_seqlen_q_buf.GetDeviceBuffer()
+                                       : nullptr;
+            args.cu_seqlen_k_ptr = has_batch_k_padding && !cukv_cum.empty()
+                                       ? cu_seqlen_kv_buf.GetDeviceBuffer()
+                                       : nullptr;
         }
     };
 
-    auto run_appendkv = [&]([[maybe_unused]] const ck_tile::stream_config& sc) {
-#if CK_TILE_FMHA_FWD_APPENDKV_API
-        if(need_append_kvcache)
-        {
-            fmha_fwd_appendkv_traits fwd_appendkv_traits;
-            init_traits(fwd_appendkv_traits);
+    // Run main SageAttention forward kernel
+    sageattn_fwd_traits fmha_traits;
+    init_traits(fmha_traits);
 
-            fmha_fwd_appendkv_args fwd_appendkv_args;
-            init_args(fwd_appendkv_args);
+    sageattn_fwd_args fmha_args;
+    init_args(fmha_args);
 
-            return fmha_fwd_appendkv(fwd_appendkv_traits, fwd_appendkv_args, sc);
-        }
-#endif
-        return 0.0f;
-    };
-    const float appendkv_ave_time = run_appendkv(stream_config);
-    if(appendkv_ave_time < 0.0f)
+    const float ave_time = sageattn_fwd(fmha_traits, fmha_args, stream_config);
+    if(ave_time < 0.0f)
     {
         std::cout << ", not supported yet" << std::flush << std::endl;
         return fwd_result::no_instance;
     }
-
-    auto run_fwd = [&](const ck_tile::stream_config& sc) {
-#if CK_TILE_FMHA_FWD_PAGEDKV_API
-        if(1 == num_splits && use_kvcache)
-        {
-            fmha_fwd_pagedkv_traits fmha_pagedkv_traits;
-            init_traits(fmha_pagedkv_traits);
-
-            fmha_fwd_pagedkv_args fmha_pagedkv_args;
-            init_args(fmha_pagedkv_args);
-
-            const float ave_time = fmha_fwd_pagedkv(fmha_pagedkv_traits, fmha_pagedkv_args, sc);
-#if CK_TILE_FMHA_FWD_SPLITKV_API
-            // If there is no instance for these args, fallback to fmha_fwd_splitkv
-            if(ave_time >= 0.0f)
-                return ave_time;
-#else
-            return ave_time;
-#endif
-        }
-#endif // CK_TILE_FMHA_FWD_PAGEDKV_API
-#if CK_TILE_FMHA_FWD_SPLITKV_API
-        if(1 < num_splits || use_kvcache)
-        {
-            fmha_fwd_splitkv_traits fmha_splitkv_traits;
-            init_traits(fmha_splitkv_traits);
-
-            fmha_fwd_splitkv_args fmha_splitkv_args;
-            init_args(fmha_splitkv_args);
-
-            return fmha_fwd_splitkv(fmha_splitkv_traits, fmha_splitkv_args, sc);
-        }
-#endif // CK_TILE_FMHA_FWD_SPLITKV_API
-        sageattn_fwd_traits fmha_traits;
-        init_traits(fmha_traits);
-
-        sageattn_fwd_args fmha_args;
-        init_args(fmha_args);
-
-        return sageattn_fwd(fmha_traits, fmha_args, sc);
-    };
-    const float fwd_ave_time = run_fwd(stream_config);
-    if(fwd_ave_time < 0.0f)
-    {
-        std::cout << ", not supported yet" << std::flush << std::endl;
-        return fwd_result::no_instance;
-    }
-
-    const float ave_time   = appendkv_ave_time + fwd_ave_time;
     const float tflops     = static_cast<float>(flop) / 1.E9 / ave_time;
     const float gb_per_sec = num_byte / 1.E6 / ave_time;
     if(stream_config.time_kernel_)
@@ -1344,17 +1087,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
     }
     else
     {
-#if CK_TILE_FMHA_FWD_APPENDKV_API
-        // When rotary embedding is used, the appendkv kernel modifies the q tensor (multiple times
-        // when time_kernel_ is set). We need to reset the q buffer and rerun all kernels.
-        if(0 < rotary_dim && stream_config.time_kernel_)
-        {
-            const ck_tile::stream_config stream_config2{stream_config.stream_id_, false, 0};
-            q_buf.ToDevice(q_host.data());
-            run_appendkv(stream_config2);
-            run_fwd(stream_config2);
-        }
-#endif
         o_buf.FromDevice(o_host.data());
         lse_buf.FromDevice(lse_host.data());
         randval_buf.FromDevice(randval_host.data());
@@ -1446,38 +1178,8 @@ fwd_result sageattention_fwd_run(mode_enum mode,
             // permute
             if(i_perm) q_host_ref.ForEach([&](auto& self, auto i) { self(i) = q_host(b_idx, i[0], i[1] + query_offset, i[2]); });
             else       q_host_ref.ForEach([&](auto& self, auto i) { self(i) = q_host(b_idx, i[1] + query_offset, i[0], i[2]); });
-                // clang-format on
+            // clang-format on
 
-#if CK_TILE_FMHA_FWD_APPENDKV_API
-            // optionally apply RoPE to the q_host_ref
-            if(0 < rotary_dim)
-            {
-                decltype(q_host_ref) q_host_ref_ro(q_host_ref.get_lengths());
-
-                auto [rotary_cos_slice, rotary_sin_slice] = slice_rotary_cos_sin(
-                    rotary_cos_host, rotary_sin_host, cache_seqlen_ks[wb], real_seqlen_q);
-
-                ck_tile::reference_batched_rotary_position_embedding(
-                    q_host_ref,
-                    rotary_cos_slice,
-                    rotary_sin_slice,
-                    is_rotary_interleaved,
-                    q_host_ref_ro,
-                    /*use_1_row_sin_cos=*/mask.type == mask_enum::no_mask);
-
-                q_host_ref.ForEach([&](auto& self, auto i) { self(i) = q_host_ref_ro(i); });
-            }
-#endif
-#if CK_TILE_FMHA_FWD_SPLITKV_API || CK_TILE_FMHA_FWD_PAGEDKV_API
-            if(0 < page_block_size)
-            {
-                // clang-format off
-                if(i_perm) k_host_ref.ForEach([&](auto& self, auto i) { self(i) = k_host(block_table_host(wb, i[1] / page_block_size), i[0] / nr, i[1] % page_block_size, i[2]); });
-                else       k_host_ref.ForEach([&](auto& self, auto i) { self(i) = k_host(block_table_host(wb, i[1] / page_block_size), i[1] % page_block_size, i[0] / nr, i[2]); });
-                // clang-format on
-            }
-            else
-#endif
             {
                 // clang-format off
                 if(i_perm) k_host_ref.ForEach([&](auto& self, auto i) { self(i) = k_host(cache_b_idx, i[0] / nr, i[1] + key_offset, i[2]); });
@@ -1485,60 +1187,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                 // clang-format on
             }
 
-#if CK_TILE_FMHA_FWD_APPENDKV_API
-            // copy Knew to the end of K
-            if(0 < seqlen_knew)
-            {
-                ck_tile::HostTensor<KDataType> knew_host_ref({nhead, seqlen_knew, hdim_q});
-                // clang-format off
-                if(i_perm) knew_host_ref.ForEach([&](auto& self, auto i) { self(i) = knew_host(wb, i[0] / nr, i[1], i[2]); });
-                else       knew_host_ref.ForEach([&](auto& self, auto i) { self(i) = knew_host(wb, i[1], i[0] / nr, i[2]); });
-                // clang-format on
-
-                // optionally apply RoPE to the knew_host_ref
-                auto* real_knew_host_ref = &knew_host_ref;
-                std::optional<decltype(knew_host_ref)> knew_host_ref_ro;
-                if(0 < rotary_dim)
-                {
-                    knew_host_ref_ro.emplace(knew_host_ref.get_lengths());
-
-                    auto [rotary_cos_slice, rotary_sin_slice] = slice_rotary_cos_sin(
-                        rotary_cos_host, rotary_sin_host, cache_seqlen_ks[wb], seqlen_knew);
-
-                    ck_tile::reference_batched_rotary_position_embedding(knew_host_ref,
-                                                                         rotary_cos_slice,
-                                                                         rotary_sin_slice,
-                                                                         is_rotary_interleaved,
-                                                                         knew_host_ref_ro.value());
-
-                    real_knew_host_ref = &knew_host_ref_ro.value();
-                }
-
-                (*real_knew_host_ref).ForEach([&](auto& self, auto i) {
-                    k_host_ref(i[0], i[1] + cache_seqlen_ks[wb], i[2]) = self(i);
-                });
-            }
-#endif
-#if CK_TILE_FMHA_FWD_SPLITKV_API || CK_TILE_FMHA_FWD_PAGEDKV_API
-            if(0 < page_block_size)
-            {
-                if(is_v_rowmajor)
-                {
-                    // clang-format off
-                    if(i_perm) v_host_ref.ForEach([&](auto& self, auto i) { self(i) = v_host(block_table_host(wb, i[2] / page_block_size), i[0] / nr, i[2] % page_block_size, i[1]); });
-                    else       v_host_ref.ForEach([&](auto& self, auto i) { self(i) = v_host(block_table_host(wb, i[2] / page_block_size), i[2] % page_block_size, i[0] / nr, i[1]); });
-                    // clang-format on
-                }
-                else
-                {
-                    // clang-format off
-                    if(i_perm) v_host_ref.ForEach([&](auto& self, auto i) { self(i) = v_host(block_table_host(wb, i[2] / page_block_size), i[0] / nr, i[1], i[2] % page_block_size); });
-                    else       v_host_ref.ForEach([&](auto& self, auto i) { self(i) = v_host(block_table_host(wb, i[2] / page_block_size), i[1], i[0] / nr, i[2] % page_block_size); });
-                    // clang-format on
-                }
-            }
-            else
-#endif
             {
                 if(is_v_rowmajor)
                 {
@@ -1557,32 +1205,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                     // clang-format on
                 }
             }
-
-#if CK_TILE_FMHA_FWD_APPENDKV_API
-            // copy Vnew to the end of V
-            if(0 < seqlen_knew)
-            {
-                ck_tile::HostTensor<VDataType> vnew_host_ref({nhead, hdim_v, seqlen_knew});
-                if(is_v_rowmajor)
-                {
-                    // clang-format off
-                    if(i_perm) vnew_host_ref.ForEach([&](auto& self, auto i) { self(i) = vnew_host(wb, i[0] / nr, i[2], i[1]); });
-                    else       vnew_host_ref.ForEach([&](auto& self, auto i) { self(i) = vnew_host(wb, i[2], i[0] / nr, i[1]); });
-                    // clang-format on
-                }
-                else
-                {
-                    // clang-format off
-                    if(i_perm) vnew_host_ref.ForEach([&](auto& self, auto i) { self(i) = vnew_host(wb, i[0] / nr, i[1], i[2]); });
-                    else       vnew_host_ref.ForEach([&](auto& self, auto i) { self(i) = vnew_host(wb, i[1], i[0] / nr, i[2]); });
-                    // clang-format on
-                }
-
-                vnew_host_ref.ForEach([&](auto& self, auto i) {
-                    v_host_ref(i[0], i[1], i[2] + cache_seqlen_ks[wb]) = self(i);
-                });
-            }
-#endif
 
             // reference
             ck_tile::
