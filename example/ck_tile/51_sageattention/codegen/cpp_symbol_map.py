@@ -130,21 +130,13 @@ MODE_MAP = {"batch": "false", "group": "true"}
 LAYOUT_MAP = {"row": "true", "col": "false"}
 
 PIPELINE_MAP = {
-    "qr": "ck_tile::BlockFmhaPipelineQRKSVS",
+    "qr": "ck_tile::BlockSageAttentionPipelineQRKSVS",
     "qr_async": "ck_tile::BlockSageAttentionPipelineQRKSVSAsync",
-    "qs": "ck_tile::BlockFmhaPipelineQSKSVS",
-    "qr_async_trload": "ck_tile::BlockFmhaPipelineQRKSVSAsyncTrload",
-    "qr_async_trload_v3": "ck_tile::BlockFmhaFwdV3Pipeline",
 }
 
 PIPELINE_ENUM_MAP = {
     "qr": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS",
     "qr_async": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS_ASYNC",
-    "qr_nwarp_sshuffle": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS",
-    "qs": "ck_tile::BlockSageAttnPipelineEnum::QSKSVS",
-    "qr_pagedkv": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS",
-    "qr_async_trload": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS_ASYNC_TRLOAD",
-    "qr_async_trload_v3": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS_ASYNC_TRLOAD_V3",
 }
 
 BOOL_MAP = {

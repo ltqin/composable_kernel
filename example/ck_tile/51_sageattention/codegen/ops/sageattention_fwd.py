@@ -1026,13 +1026,8 @@ class KernelComponentFactoryGfx950(
 
     @classmethod
     def get_hdim_tile_size_dict(cls, dtype: str) -> Optional[dict]:
-        result = KernelComponentFactoryGfx9.get_hdim_tile_size_dict(dtype)
-        if dtype in cls._DT_FP16_BF16:
-            # add tile for qr_async_trload_v3
-            if (128, 128) in result.keys():
-                result[(128, 128)].append(
-                    FmhaFwdTileSize(256, 32, 128, 128, 32, 128,  8, 1, 1,  8, 1, 1,  32, 32, 16,  32, 32, 16,  -1))  # fmt: skip
-        return result
+        # SageAttention uses same tile sizes as gfx9
+        return KernelComponentFactoryGfx9.get_hdim_tile_size_dict(dtype)
 
     @classmethod
     def get_pipelines(
@@ -1041,33 +1036,7 @@ class KernelComponentFactoryGfx950(
         pipelines = KernelComponentFactoryGfx9.get_pipelines(
             dtype, hdim, hdim_v, receipt, mask_impl
         )
-        if dtype in cls._DT_FP16_BF16:
-            qscale = "no"
-            lse = "f"  # lse: only false
-            dropout = "f"  # dropout: only false
-            skip = "f"  # skip: only false
-            sink = "f"  # sink: only false
-            for mask, bias in itertools.product(
-                get_mask_map(mask_impl).keys(),
-                BIAS_MAP.keys(),
-            ):
-                if (
-                    (hdim, hdim_v) in [(64, 64), (128, 128)]
-                    and bias == "no"
-                    and dropout == "f"
-                    and skip == "f"
-                ):
-                    pipelines.append(FmhaFwdPipeline("qr_async_trload", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "t", sink))  # fmt: skip
-                    pipelines.append(FmhaFwdPipeline("qr_async_trload", "row", "f", "f", "t", "t", bias, lse, dropout, qscale, mask, skip, "t", sink))  # fmt: skip
-
-            # qr_async_trload_v3 only supports hdim=hdim_v=128 for now
-            if (hdim, hdim_v) == (128, 128):
-                # qr_async_trload_v3 only supports (generic) causal mask
-                qscale = "no"
-                for mask in ["no", "causal"]:
-                    pipelines.append(FmhaFwdPipeline("qr_async_trload_v3", "row", "t", "t", "f", "f",
-                        F_bias="no", F_lse="f", F_dropout="f", F_qscale=qscale, F_mask=mask, F_skip="f", F_trload="t", F_sink="f"))  # fmt: skip
-
+        # SageAttention only uses qr and qr_async pipelines
         return pipelines
 
 
