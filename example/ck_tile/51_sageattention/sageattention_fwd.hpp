@@ -403,7 +403,6 @@ struct sageattn_fwd_traits_
     static constexpr ck_tile::index_t kK0BlockLength = kK0BlockLength_;
     static constexpr bool kIsVLayoutRowMajor         = kIsVLayoutRowMajor_;
     static constexpr auto FmhaPipelineEnum           = FmhaPipelineEnum_;
-    static constexpr bool kHasLogitsSoftCap          = false; // always disabled for sageattention
     using FmhaMask                                   = ck_tile::remove_cvref_t<FmhaMask_>;
     static constexpr auto BiasEnum                   = BiasEnum_;
     static constexpr bool kStoreLse                  = kStoreLse_;

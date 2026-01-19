@@ -53,13 +53,12 @@ struct BlockSageAttentionPipelineQRKSVSAsync
     //       only need special care about seq_k padding (oob need set -INF of p instead of zero)
     static_assert(Problem::kPadSeqLenQ == true && Problem::kPadHeadDimQ == true &&
                   Problem::kPadHeadDimV == true);
-    static constexpr bool kPadSeqLenQ       = true;
-    static constexpr bool kPadSeqLenK       = Problem::kPadSeqLenK;
-    static constexpr bool kPadHeadDimQ      = true; // support multiple of vector(like 8x)
-    static constexpr bool kPadHeadDimV      = true; // support multiple of vector(like 8x)
-    static constexpr auto BiasEnum          = Problem::BiasEnum;
-    static constexpr bool kStoreLSE         = Problem::kStoreLSE;
-    static constexpr bool kHasLogitsSoftCap = false; // always disabled for sageattention
+    static constexpr bool kPadSeqLenQ  = true;
+    static constexpr bool kPadSeqLenK  = Problem::kPadSeqLenK;
+    static constexpr bool kPadHeadDimQ = true; // support multiple of vector(like 8x)
+    static constexpr bool kPadHeadDimV = true; // support multiple of vector(like 8x)
+    static constexpr auto BiasEnum     = Problem::BiasEnum;
+    static constexpr bool kStoreLSE    = Problem::kStoreLSE;
 
     // last dimension vector length used to create tensor view(and decide buffer_load vector length)
     // ... together with tensor distribution. tensor dist should able to overwrite this

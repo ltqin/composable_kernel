@@ -23,17 +23,16 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           bool kSkipMinSeqlenQ_ = false /* skip min seqlen q while chunked prefill */>
 struct TileSageAttnTraits
 {
-    static constexpr bool kPadSeqLenQ       = kPadSeqLenQ_;
-    static constexpr bool kPadSeqLenK       = kPadSeqLenK_;
-    static constexpr bool kPadHeadDimQ      = kPadHeadDimQ_;
-    static constexpr bool kPadHeadDimV      = kPadHeadDimV_;
-    static constexpr bool kHasLogitsSoftCap = false; // always disabled for sageattention
-    static constexpr auto BiasEnum          = BiasEnum_;
-    static constexpr bool kHasBiasGrad      = kHasBiasGrad_;
-    static constexpr bool kStoreLSE         = kStoreLSE_;
-    static constexpr auto QScaleEnum        = QScaleEnum_;
-    static constexpr index_t kBlockPerCu    = kBlockPerCu_;
-    static constexpr bool kSkipMinSeqlenQ   = kSkipMinSeqlenQ_;
+    static constexpr bool kPadSeqLenQ     = kPadSeqLenQ_;
+    static constexpr bool kPadSeqLenK     = kPadSeqLenK_;
+    static constexpr bool kPadHeadDimQ    = kPadHeadDimQ_;
+    static constexpr bool kPadHeadDimV    = kPadHeadDimV_;
+    static constexpr auto BiasEnum        = BiasEnum_;
+    static constexpr bool kHasBiasGrad    = kHasBiasGrad_;
+    static constexpr bool kStoreLSE       = kStoreLSE_;
+    static constexpr auto QScaleEnum      = QScaleEnum_;
+    static constexpr index_t kBlockPerCu  = kBlockPerCu_;
+    static constexpr bool kSkipMinSeqlenQ = kSkipMinSeqlenQ_;
 };
 
 } // namespace ck_tile
