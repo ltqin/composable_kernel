@@ -389,8 +389,7 @@ template <ck_tile::index_t HDim_,
           bool kPadD_,
           bool kPadDv_,
           bool kUseTrLoad_,
-          bool kSkipMinSeqlenQ_ = false,
-          bool kHasSink_        = false>
+          bool kSkipMinSeqlenQ_ = false>
 struct sageattn_fwd_traits_
 {
     static constexpr ck_tile::index_t HDim           = HDim_;
@@ -415,7 +414,6 @@ struct sageattn_fwd_traits_
     static constexpr bool kPadDv                     = kPadDv_;
     static constexpr bool kUseTrLoad                 = kUseTrLoad_;
     static constexpr bool kSkipMinSeqlenQ            = kSkipMinSeqlenQ_;
-    static constexpr bool kHasSink                   = kHasSink_;
 };
 
 template <typename Traits_, typename Arch = void>

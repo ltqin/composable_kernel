@@ -59,7 +59,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
     static constexpr bool kPadHeadDimV      = true; // support multiple of vector(like 8x)
     static constexpr auto BiasEnum          = Problem::BiasEnum;
     static constexpr bool kStoreLSE         = Problem::kStoreLSE;
-    static constexpr bool kHasSink          = Problem::kHasSink;
     static constexpr bool kHasLogitsSoftCap = false; // always disabled for sageattention
 
     // last dimension vector length used to create tensor view(and decide buffer_load vector length)
@@ -466,18 +465,9 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                             });
                     };
 
-                    if constexpr(kHasSink)
-                    {
-                        apply_mask([&](auto&&... args) {
-                            return variant.LogitsSinkMask(std::forward<decltype(args)>(args)...);
-                        });
-                    }
-                    else
-                    {
-                        apply_mask([&](auto&&... args) {
-                            return variant.LogitsMask(std::forward<decltype(args)>(args)...);
-                        });
-                    }
+                    apply_mask([&](auto&&... args) {
+                        return variant.LogitsMask(std::forward<decltype(args)>(args)...);
+                    });
                 }
             }
 

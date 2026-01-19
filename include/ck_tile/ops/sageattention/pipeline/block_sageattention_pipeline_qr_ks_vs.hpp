@@ -55,7 +55,6 @@ struct BlockSageAttentionPipelineQRKSVS
     static constexpr bool kHasLogitsSoftCap = Problem::kHasLogitsSoftCap;
     static constexpr auto BiasEnum          = Problem::BiasEnum;
     static constexpr bool kStoreLSE         = Problem::kStoreLSE;
-    static constexpr bool kHasSink          = Problem::kHasSink;
 
     static constexpr uint32_t DS_READ = 0x100; // Barrier for DS (data share) read
     static constexpr uint32_t MFMA    = 0x008; // Barrier for MFMA (matrix multiply-accumulate)
@@ -474,18 +473,9 @@ struct BlockSageAttentionPipelineQRKSVS
                             });
                     };
 
-                    if constexpr(kHasSink)
-                    {
-                        apply_mask([&](auto&&... args) {
-                            return variant.LogitsSinkMask(std::forward<decltype(args)>(args)...);
-                        });
-                    }
-                    else
-                    {
-                        apply_mask([&](auto&&... args) {
-                            return variant.LogitsMask(std::forward<decltype(args)>(args)...);
-                        });
-                    }
+                    apply_mask([&](auto&&... args) {
+                        return variant.LogitsMask(std::forward<decltype(args)>(args)...);
+                    });
                 }
             }
 

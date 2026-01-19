@@ -59,7 +59,6 @@ struct SageAttnFwdKernel
     static constexpr bool kStoreLSE       = SageAttnPipeline::kStoreLSE;
     static constexpr auto QScaleEnum      = SageAttnPipeline::Problem::QScaleEnum;
     static constexpr bool kSkipMinSeqlenQ = SageAttnPipeline::Problem::kSkipMinSeqlenQ;
-    static constexpr bool kHasSink        = SageAttnPipeline::kHasSink;
 
     using AttentionVariant = ck_tile::remove_cvref_t<typename SageAttnPipeline::AttentionVariant>;
     using FmhaMask         = ck_tile::remove_cvref_t<typename SageAttnPipeline::FmhaMask>;
