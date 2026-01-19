@@ -114,7 +114,7 @@ int num_splits_heuristic(int batch_nhead_mblocks, int num_SMs, int max_splits)
 }
 
 int override_num_splits_if_necessary(
-    int batch, int nhead, int max_seqlen_q, int hdim_v, float p_drop, int num_splits)
+    int batch, int nhead, int max_seqlen_q, int hdim_v, int num_splits)
 {
     (void)hdim_v;
     int device;
@@ -136,7 +136,7 @@ int override_num_splits_if_necessary(
 
     const int num_m_blocks = ck_tile::integer_divide_ceil(max_seqlen_q, kM0);
 
-    if(num_splits < 1 && p_drop == 0.0f)
+    if(num_splits < 1)
     {
         return num_splits_heuristic(
             batch * nhead * num_m_blocks, props.multiProcessorCount * 2, 128);
@@ -168,10 +168,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                                  ck_tile::index_t page_block_size,
                                  bool use_cache_batch_idx,
                                  std::string bias_str,
-                                 float p_drop,
-                                 uint64_t drop_seed,
-                                 uint64_t drop_offset,
-                                 bool drop_prefs,
                                  std::string mask_str,
                                  std::string qscale_str,
                                  [[maybe_unused]] bool is_rotary_interleaved,
@@ -345,18 +341,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
 
     quant_scale_info qscale = quant_scale_info::decode(qscale_str);
 
-    if(p_drop < 0.0f || p_drop > 1.0f)
-    {
-        std::cerr << "The value of p_drop should be 0~1" << std::endl;
-        return fwd_result::invalid_args;
-    }
-
-    bool s_randval = false;
-    if(p_drop > 0.0f && do_validation)
-    {
-        s_randval = true;
-    }
-
     // SageAttention doesn't support split-kv
     if(num_splits != 1)
     {
@@ -445,8 +429,8 @@ fwd_result sageattention_fwd_run(mode_enum mode,
     // legalize num_splits according to other options
     if(num_splits < 1)
     {
-        num_splits = override_num_splits_if_necessary(
-            batch, nhead, max_seqlen_q, hdim_v, p_drop, num_splits);
+        num_splits =
+            override_num_splits_if_necessary(batch, nhead, max_seqlen_q, hdim_v, num_splits);
     }
     if(128 < num_splits)
     {
@@ -543,8 +527,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         get_lengths(o_perm, shape_batch, nhead, shape_seqlen_q, hdim_v));
 
     ck_tile::HostTensor<RandValOutputDataType> randval_host(
-        p_drop > 0 ? get_lengths(true, shape_batch, nhead, shape_seqlen_q, max_seqlen_k)
-                   : std::array<ck_tile::index_t, 4>{1, 1, 1, 1});
+        std::array<ck_tile::index_t, 4>{1, 1, 1, 1});
 
     ck_tile::HostTensor<int32_t> block_table_host(
         0 < page_block_size ? std::array<ck_tile::index_t, 2>{batch, max_num_page_blocks / batch}
@@ -686,8 +669,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
     ck_tile::DeviceMem cache_seqlen_k_buf(0); // appendkv not supported
     ck_tile::DeviceMem rotary_cos_buf(rotary_cos_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem rotary_sin_buf(rotary_sin_host.get_element_space_size_in_bytes());
-    ck_tile::DeviceMem drop_seed_buf(drop_prefs ? sizeof(uint64_t) : 0);
-    ck_tile::DeviceMem drop_offset_buf(drop_prefs ? sizeof(uint64_t) : 0);
     ck_tile::DeviceMem randval_buf(randval_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem alibi_slope_buf(alibi_slope_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem block_table_buf(block_table_host.get_element_space_size_in_bytes());
@@ -718,8 +699,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
     // appendkv not supported, no need to transfer cache_seqlen_k
     rotary_cos_buf.ToDevice(rotary_cos_host.data());
     rotary_sin_buf.ToDevice(rotary_sin_host.data());
-    drop_seed_buf.ToDevice(drop_prefs ? &drop_seed : nullptr);
-    drop_offset_buf.ToDevice(drop_prefs ? &drop_offset : nullptr);
     alibi_slope_buf.ToDevice(alibi_slope_host.data());
     block_table_buf.ToDevice(block_table_host.data());
     cache_batch_idx_buf.ToDevice(cache_batch_idx_host.data());
@@ -741,8 +720,8 @@ fwd_result sageattention_fwd_run(mode_enum mode,
               << (seqlen_kpads[0] < 0 ? ""
                                       : (std::string("(") + std::to_string(seqlen_kpads[0]) + ")"))
               << ", d:" << hdim_q << "/" << hdim_v << ", scale_s:" << scale_s << ", bias:" << bias
-              << ", p_drop:" << p_drop << ", lse:" << lse << ", qscale:" << qscale
-              << ", mask:" << mask << ", v:" << (is_v_rowmajor ? "r" : "c");
+              << ", lse:" << lse << ", qscale:" << qscale << ", mask:" << mask
+              << ", v:" << (is_v_rowmajor ? "r" : "c");
     // Padding / effective length diagnostic logging
     auto print_vec = [&](const char* label, const std::vector<int>& v) {
         if(v.empty())
@@ -802,7 +781,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         traits.mask_type     = mask.type;
         traits.bias_type     = bias.type;
         traits.has_lse       = lse;
-        traits.has_dropout   = (p_drop > 0.0f);
         traits.qscale_type   = qscale.type;
     };
 
@@ -820,9 +798,8 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                 return 0 < page_block_size ? (i_perm ? page_block_size : nhead_k * page_block_size)
                                            : (i_perm ? shape_seqlen_k : nhead_k * shape_seqlen_k);
         }();
-        const ck_tile::index_t stride_bias    = (i_perm ? max_seqlen_k : 1 * max_seqlen_k);
-        const ck_tile::index_t stride_randval = (max_seqlen_k);
-        const ck_tile::index_t stride_o       = (o_perm ? hdim_v : nhead * hdim_v);
+        const ck_tile::index_t stride_bias = (i_perm ? max_seqlen_k : 1 * max_seqlen_k);
+        const ck_tile::index_t stride_o    = (o_perm ? hdim_v : nhead * hdim_v);
         // setup nhead_stride_* arguments
         const ck_tile::index_t nhead_stride_q = (i_perm ? shape_seqlen_q * hdim_q : hdim_q);
         const ck_tile::index_t nhead_stride_k =
@@ -838,9 +815,8 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         }();
         const ck_tile::index_t nhead_stride_bias =
             (i_perm ? 0 * shape_seqlen_q * max_seqlen_k : 0 * max_seqlen_k);
-        const ck_tile::index_t nhead_stride_randval = (shape_seqlen_q * max_seqlen_k);
-        const ck_tile::index_t nhead_stride_lse     = shape_seqlen_q;
-        const ck_tile::index_t nhead_stride_o       = (o_perm ? shape_seqlen_q * hdim_v : hdim_v);
+        const ck_tile::index_t nhead_stride_lse = shape_seqlen_q;
+        const ck_tile::index_t nhead_stride_o   = (o_perm ? shape_seqlen_q * hdim_v : hdim_v);
         // setup batch_stride_* arguments
         const ck_tile::index_t batch_stride_q = (nhead * shape_seqlen_q * hdim_q);
         const ck_tile::index_t batch_stride_k =
@@ -849,10 +825,9 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         const ck_tile::index_t batch_stride_v =
             (0 < page_block_size ? (nhead_k * hdim_v * page_block_size)
                                  : (nhead_k * hdim_v * shape_seqlen_k));
-        const ck_tile::index_t batch_stride_bias    = (0 * nhead * shape_seqlen_q * max_seqlen_k);
-        const ck_tile::index_t batch_stride_randval = (nhead * shape_seqlen_q * max_seqlen_k);
-        const ck_tile::index_t batch_stride_lse     = (nhead * shape_seqlen_q);
-        const ck_tile::index_t batch_stride_o       = (nhead * shape_seqlen_q * hdim_v);
+        const ck_tile::index_t batch_stride_bias = (0 * nhead * shape_seqlen_q * max_seqlen_k);
+        const ck_tile::index_t batch_stride_lse  = (nhead * shape_seqlen_q);
+        const ck_tile::index_t batch_stride_o    = (nhead * shape_seqlen_q * hdim_v);
         // setup split_stride_* arguments (only used in split-kv kernel)
 
         args.q_ptr    = q_buf.GetDeviceBuffer();
@@ -905,22 +880,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         args.v_descale_ptr = v_descale_buf.GetDeviceBuffer();
 
         args.rand_val_ptr = randval_buf.GetDeviceBuffer();
-
-        args.stride_randval       = stride_randval;
-        args.nhead_stride_randval = nhead_stride_randval;
-        args.batch_stride_randval = batch_stride_randval;
-
-        args.p_drop    = p_drop;
-        args.s_randval = s_randval;
-        if(drop_prefs)
-        {
-            args.drop_seed_offset =
-                std::make_pair(drop_seed_buf.GetDeviceBuffer(), drop_offset_buf.GetDeviceBuffer());
-        }
-        else
-        {
-            args.drop_seed_offset = std::make_pair(drop_seed, drop_offset);
-        }
 
         // Sequence length and padding parameters (mode-specific)
         if(mode == mode_enum::group)
@@ -1083,11 +1042,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
             else
                 return ck_tile::identity{};
         }();
-
-        float p_undrop = 1.0 - p_drop;
-        uint8_t p_undrop_in_uint8_t =
-            uint8_t(std::floor(p_undrop * std::numeric_limits<uint8_t>::max()));
-        float rp_undrop = 1.0 / p_undrop;
 
         for(ck_tile::index_t wb = 0; wb < batch; ++wb)
         {
@@ -1292,37 +1246,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                     reference_batched_softmax<SMPLComputeDataType, SMPLComputeDataType, PDataType>(
                         s_host_ref, p_host_ref, p_compute_element_func);
             }
-            if(p_drop > 0)
-            {
-                ck_tile::HostTensor<RandValOutputDataType> randval_host_ref(
-                    {nhead, real_seqlen_q, real_seqlen_k});
-                ck_tile::reference_batched_dropout_randval(
-                    randval_host_ref, wb, drop_seed, drop_offset);
-                ck_tile::reference_batched_dropout(
-                    p_host_ref, randval_host_ref, p_undrop_in_uint8_t, rp_undrop);
-
-                ck_tile::HostTensor<RandValOutputDataType> randval_host_result(
-                    {nhead, real_seqlen_q, real_seqlen_k});
-                randval_host_result.ForEach([&](auto& self, const auto& idx) {
-                    self(idx) = randval_host(b_idx, idx[0], idx[1] + query_offset, idx[2]);
-                });
-                masked_s_host_ref.ForEach([&](const auto& self, const auto& idx) {
-                    // Ignore all masked values in validation check
-                    if(std::isinf(self(idx)))
-                    {
-                        randval_host_ref(idx)    = 0;
-                        randval_host_result(idx) = 0;
-                    }
-                });
-                bool cur_pass = ck_tile::check_err(randval_host_result,
-                                                   randval_host_ref,
-                                                   "DROPOUT RANDVAL Error: Incorrect results!");
-                pass &= cur_pass;
-                if(!cur_pass)
-                {
-                    break;
-                }
-            }
 
             ck_tile::reference_batched_gemm<PDataType, VDataType, OaccDataType, ODataType>(
                 p_host_ref,
@@ -1409,7 +1332,7 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                                    hdim_q,
                                    hdim_v,
                                    scale_s,
-                                   p_drop,
+                                   0.0f, // p_drop (dropout disabled for sageattention)
                                    lse,
                                    qscale.type == quant_scale_enum::no_scale ? "no_scale"
                                                                              : "pertensor",

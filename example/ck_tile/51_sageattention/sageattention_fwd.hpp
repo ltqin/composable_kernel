@@ -247,20 +247,17 @@ struct sageattn_fwd_args
     ck_tile::index_t stride_k;
     ck_tile::index_t stride_v;
     ck_tile::index_t stride_bias; // if alibi, b*h need set this to h, 1*h need set this to 0
-    ck_tile::index_t stride_randval;
     ck_tile::index_t stride_o;
     ck_tile::index_t nhead_stride_q;
     ck_tile::index_t nhead_stride_k;
     ck_tile::index_t nhead_stride_v;
     ck_tile::index_t nhead_stride_bias;
-    ck_tile::index_t nhead_stride_randval;
     ck_tile::index_t nhead_stride_lse;
     ck_tile::index_t nhead_stride_o;
     ck_tile::index_t batch_stride_q;
     ck_tile::index_t batch_stride_k;
     ck_tile::index_t batch_stride_v;
     ck_tile::index_t batch_stride_bias;
-    ck_tile::index_t batch_stride_randval;
     ck_tile::index_t batch_stride_lse;
     ck_tile::index_t batch_stride_o;
 
@@ -268,12 +265,6 @@ struct sageattn_fwd_args
     ck_tile::index_t window_size_right;
     ck_tile::index_t mask_type;
     ck_tile::index_t min_seqlen_q;
-
-    float p_drop;
-    bool s_randval;
-
-    std::variant<std::pair<uint64_t, uint64_t>, std::pair<const void*, const void*>>
-        drop_seed_offset;
 };
 
 template <typename SageAttnKernel>
@@ -291,7 +282,6 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.q_descale_ptr,
                                                  args.k_descale_ptr,
                                                  args.v_descale_ptr,
-                                                 args.rand_val_ptr,
                                                  args.lse_ptr,
                                                  args.o_ptr,
                                                  args.seqstart_q_ptr,
@@ -307,22 +297,17 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.stride_k,
                                                  args.stride_v,
                                                  args.stride_bias,
-                                                 args.stride_randval,
                                                  args.stride_o,
                                                  args.nhead_stride_q,
                                                  args.nhead_stride_k,
                                                  args.nhead_stride_v,
                                                  args.nhead_stride_bias,
-                                                 args.nhead_stride_randval,
                                                  args.nhead_stride_lse,
                                                  args.nhead_stride_o,
                                                  args.window_size_left,
                                                  args.window_size_right,
                                                  args.mask_type,
                                                  args.min_seqlen_q,
-                                                 args.p_drop,
-                                                 args.s_randval,
-                                                 args.drop_seed_offset,
                                                  args.cu_seqlen_q_ptr,
                                                  args.cu_seqlen_k_ptr);
         }
@@ -335,7 +320,6 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.q_descale_ptr,
                                                  args.k_descale_ptr,
                                                  args.v_descale_ptr,
-                                                 args.rand_val_ptr,
                                                  args.lse_ptr,
                                                  args.o_ptr,
                                                  args.seqlen_q,
@@ -349,28 +333,22 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.stride_k,
                                                  args.stride_v,
                                                  args.stride_bias,
-                                                 args.stride_randval,
                                                  args.stride_o,
                                                  args.nhead_stride_q,
                                                  args.nhead_stride_k,
                                                  args.nhead_stride_v,
                                                  args.nhead_stride_bias,
-                                                 args.nhead_stride_randval,
                                                  args.nhead_stride_lse,
                                                  args.nhead_stride_o,
                                                  args.batch_stride_q,
                                                  args.batch_stride_k,
                                                  args.batch_stride_v,
                                                  args.batch_stride_bias,
-                                                 args.batch_stride_randval,
                                                  args.batch_stride_lse,
                                                  args.batch_stride_o,
                                                  args.window_size_left,
                                                  args.window_size_right,
                                                  args.mask_type,
-                                                 args.p_drop,
-                                                 args.s_randval,
-                                                 args.drop_seed_offset,
                                                  args.cu_seqlen_q_ptr,
                                                  args.cu_seqlen_k_ptr);
         }
@@ -405,7 +383,6 @@ template <ck_tile::index_t HDim_,
           typename FmhaMask_,
           ck_tile::BlockAttentionBiasEnum BiasEnum_,
           bool kStoreLse_,
-          bool kHasDropout_,
           ck_tile::BlockAttentionQuantScaleEnum QScaleEnum_,
           bool kPadS_,
           bool kPadSK_,
@@ -431,7 +408,6 @@ struct sageattn_fwd_traits_
     using FmhaMask                                   = ck_tile::remove_cvref_t<FmhaMask_>;
     static constexpr auto BiasEnum                   = BiasEnum_;
     static constexpr bool kStoreLse                  = kStoreLse_;
-    static constexpr bool kHasDropout                = kHasDropout_;
     static constexpr auto QScaleEnum                 = QScaleEnum_;
     static constexpr bool kPadS                      = kPadS_;
     static constexpr bool kPadSK                     = kPadSK_;
@@ -456,7 +432,6 @@ struct sageattn_fwd_traits
     mask_enum mask_type;
     bias_enum bias_type; // 0:no bias, 1:elementwise bias, 2:alibi. sync with BlockAttentionBiasEnum
     bool has_lse;
-    bool has_dropout;
     quant_scale_enum qscale_type;
     bool skip_min_seqlen_q = false;
     // TODO: padding check is inside this api

@@ -7,7 +7,6 @@
 #include "ck_tile/ops/common/tensor_layout.hpp"
 #include "ck_tile/ops/fmha/block/block_attention_bias_enum.hpp"
 #include "ck_tile/ops/sageattention/pipeline/block_sageattention_pipeline_qr_ks_vs_async_default_policy.hpp"
-#include "ck_tile/ops/fmha/block/block_dropout.hpp"
 #include "ck_tile/ops/reduce/block/block_reduce.hpp"
 
 namespace ck_tile {
@@ -60,7 +59,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
     static constexpr bool kPadHeadDimV      = true; // support multiple of vector(like 8x)
     static constexpr auto BiasEnum          = Problem::BiasEnum;
     static constexpr bool kStoreLSE         = Problem::kStoreLSE;
-    static constexpr bool kHasDropout       = Problem::kHasDropout;
     static constexpr bool kHasSink          = Problem::kHasSink;
     static constexpr bool kHasLogitsSoftCap = false; // always disabled for sageattention
 
@@ -90,12 +88,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
             return Problem::kBlockPerCu;
         else
         {
-            // minimize occupancy
-            if constexpr(BiasEnum != BlockAttentionBiasEnum::NO_BIAS && kHasDropout)
-            {
-                return 1;
-            }
-
             if constexpr(kQKHeaddim <= 32)
             {
                 if constexpr(kPadSeqLenK && BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS &&
@@ -138,8 +130,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
 
     static constexpr const char* name = "qr_async";
 
-    using DropoutType = std::conditional_t<kHasDropout, BlockDropout, NullBlockDropout>;
-
     CK_TILE_HOST_DEVICE static constexpr ck_tile::index_t GetSmemSize()
     {
         return Policy::template GetSmemSize<Problem>();
@@ -149,7 +139,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
               typename KDramBlockWindowTmp,
               typename VDramBlockWindowTmp,
               typename BiasDramBlockWindowTmp,
-              typename RandValDramBlockWindowTmp,
               typename LSEDramBlockWindowTmp,
               typename QElementFunction,
               typename KElementFunction,
@@ -171,7 +160,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                const VElementFunction& v_element_func,
                const BiasDramBlockWindowTmp& bias_dram_block_window_tmp, // M0*N0 tile
                const BiasElementFunction& bias_element_func,
-               RandValDramBlockWindowTmp& randval_dram_block_window_tmp,
                LSEDramBlockWindowTmp& lse_dram_window_tmp, // M0*1 tile
                const LSEElementFunction& lse_element_func,
                const SAccElementFunction& s_acc_element_func,
@@ -183,8 +171,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                const AttentionVariant& variant,
                const AttentionVariantParams& variant_params,
                const BlockIndices& block_indices,
-               void* smem_ptr,
-               DropoutType& dropout) const
+               void* smem_ptr) const
     {
         static_assert(
             std::is_same_v<QDataType, remove_cvref_t<typename QDramBlockWindowTmp::DataType>> &&
@@ -323,9 +310,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
         k_dram_window.init_raw();
         constexpr auto k_oob_ck = bool_constant<true>{};
         constexpr auto k_pre_np = [&]() {
-            if constexpr(kPadSeqLenK &&
-                         (BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS ||
-                          (BiasEnum != BlockAttentionBiasEnum::NO_BIAS && kHasDropout)))
+            if constexpr(kPadSeqLenK && BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
                 return bool_constant<true>{};
             else
                 return bool_constant<false>{};
@@ -337,9 +322,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                              bias_dram_block_window_tmp.get_window_lengths(),
                              {bias_origin.at(number<0>{}), 0}, // M/N
                              Policy::template MakeBiasDramTileDistribution<decltype(gemm_0)>());
-
-        auto randval_dram_window = dropout.template MakeRandvalDramWindow<decltype(gemm_0)>(
-            randval_dram_block_window_tmp, 0);
 
         auto v_dram_window =
             make_tile_window(v_dram_block_window_tmp.get_bottom_tensor_view(),
@@ -627,17 +609,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                 });
             });
 
-            if constexpr(kHasDropout)
-            {
-                auto randval_ptr =
-                    reinterpret_cast<char*>(smem_ptr) + Policy::template GetSmemSizeKV<Problem>();
-
-                index_t seq_offset = seqlen_k_start + i_total_loops * kN0;
-
-                dropout.template Run<decltype(gemm_0), SMPLComputeDataType, RandValOutputDataType>(
-                    randval_ptr, seq_offset, p_compute, randval_dram_window);
-            }
-
             const auto p = [&]() {
 #if CK_TILE_FMHA_FLOAT_TO_FLOAT16_RTN
                 // For fp32 to fp16,
@@ -783,7 +754,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
               typename KDramBlockWindowTmp,
               typename VDramBlockWindowTmp,
               typename BiasDramBlockWindowTmp,
-              typename RandValDramBlockWindowTmp,
               typename LSEDramBlockWindowTmp,
               typename PositionEncoding,
               typename AttentionVariantParams,
@@ -793,7 +763,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                const KDramBlockWindowTmp& k_dram_block_window_tmp,       // N0*K0 tile
                const VDramBlockWindowTmp& v_dram_block_window_tmp,       // N1*K1 tile
                const BiasDramBlockWindowTmp& bias_dram_block_window_tmp, // M0*N0 tile
-               RandValDramBlockWindowTmp& randval_dram_block_window_tmp, // M0*N0 tile
                LSEDramBlockWindowTmp& lse_dram_block_window_tmp,         // M0*1 tile
                FmhaMask mask,
                PositionEncoding position_encoding,
@@ -801,8 +770,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                const AttentionVariant& variant,
                const AttentionVariantParams& variant_params,
                const BlockIndices& block_indices,
-               void* smem_ptr,
-               DropoutType& dropout) const
+               void* smem_ptr) const
     {
         return operator()(q_dram_block_window_tmp,
                           identity{},
@@ -812,7 +780,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                           identity{},
                           bias_dram_block_window_tmp,
                           identity{},
-                          randval_dram_block_window_tmp,
                           lse_dram_block_window_tmp,
                           identity{},
                           identity{},
@@ -824,8 +791,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                           variant,
                           variant_params,
                           block_indices,
-                          smem_ptr,
-                          dropout);
+                          smem_ptr);
     }
 };
 

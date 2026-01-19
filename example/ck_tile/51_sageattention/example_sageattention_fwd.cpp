@@ -86,13 +86,6 @@ auto create_args(int argc, char* argv[])
                 "11939",
                 "random seed used for initializing input tensors. 0 for "
                 "non-deterministic seed")
-        .insert("p_drop", "0", "0~1 probability of dropout")
-        .insert("drop_seed", "1", "seed for dropout random number generator")
-        .insert("drop_offset", "0", "offset for dropout random number generator")
-        .insert(
-            "drop_prefs",
-            "0",
-            "whether dropout seed and offset values are present on GPU; 0 - host, 1 - device/GPU")
         .insert("timer", "gpu", "gpu:gpu timer, cpu:cpu timer")
         .insert(
             "rotary_dim", "0", "RoPE rotary dimension. rotary_dim <= 0 means not apply RoPE at all")
@@ -146,10 +139,6 @@ auto run(const ck_tile::ArgParser& arg_parser)
     bool use_cache_batch_idx         = arg_parser.get_bool("cache_batch_idx");
     std::string bias_str             = arg_parser.get_str("bias");
     std::string qscale_str           = arg_parser.get_str("qscale");
-    float p_drop                     = arg_parser.get_float("p_drop");
-    uint64_t drop_seed               = arg_parser.get_uint64("drop_seed");
-    uint64_t drop_offset             = arg_parser.get_uint64("drop_offset");
-    bool drop_prefs                  = arg_parser.get_bool("drop_prefs");
     std::string mask_str             = arg_parser.get_str("mask");
     bool is_rotary_interleaved       = arg_parser.get_bool("rotary_interleaved");
     ck_tile::index_t num_splits      = arg_parser.get_int("num_splits");
@@ -189,10 +178,6 @@ auto run(const ck_tile::ArgParser& arg_parser)
                                                  page_block_size,
                                                  use_cache_batch_idx,
                                                  bias_str,
-                                                 p_drop,
-                                                 drop_seed,
-                                                 drop_offset,
-                                                 drop_prefs,
                                                  mask_str,
                                                  qscale_str,
                                                  is_rotary_interleaved,

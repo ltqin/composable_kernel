@@ -7,7 +7,6 @@
 #include "ck_tile/ops/common.hpp"
 #include "ck_tile/ops/fmha/block/block_attention_bias_enum.hpp"
 #include "ck_tile/ops/fmha/block/block_attention_quant_scale_enum.hpp"
-#include "ck_tile/ops/fmha/block/block_dropout.hpp"
 #include "ck_tile/ops/fmha/block/block_masking.hpp"
 #include "ck_tile/ops/fmha/block/block_position_encoding.hpp"
 #include "ck_tile/ops/fmha/block/variants.hpp"
@@ -58,7 +57,6 @@ struct SageAttnFwdKernel
     // logits_soft_cap is always disabled
     static constexpr auto BiasEnum        = SageAttnPipeline::BiasEnum;
     static constexpr bool kStoreLSE       = SageAttnPipeline::kStoreLSE;
-    static constexpr bool kHasDropout     = SageAttnPipeline::kHasDropout;
     static constexpr auto QScaleEnum      = SageAttnPipeline::Problem::QScaleEnum;
     static constexpr bool kSkipMinSeqlenQ = SageAttnPipeline::Problem::kSkipMinSeqlenQ;
     static constexpr bool kHasSink        = SageAttnPipeline::kHasSink;
@@ -154,60 +152,6 @@ struct SageAttnFwdKernel
         ck_tile::index_t batch_stride_lse = 0;
     };
 
-    struct SageAttnFwdDropoutSeedOffset
-    {
-        template <typename T>
-        union ValueOrPointer
-        {
-            T val;
-            const T* ptr;
-        };
-
-        ValueOrPointer<uint64_t> drop_seed;
-        ValueOrPointer<uint64_t> drop_offset;
-        bool is_drop_seed_offset_from_host;
-    };
-
-    struct SageAttnFwdCommonDropoutKargs : SageAttnFwdDropoutSeedOffset
-    {
-        void init_dropout(float p_drop, uint64_t seed, uint64_t offset)
-        {
-            float p_undrop = 1.0 - p_drop;
-            p_undrop_in_uint8_t =
-                uint8_t(std::floor(p_undrop * std::numeric_limits<uint8_t>::max()));
-            rp_undrop = 1.0 / p_undrop;
-
-            this->drop_seed.val                 = seed;
-            this->drop_offset.val               = offset;
-            this->is_drop_seed_offset_from_host = true;
-        }
-
-        void init_dropout(float p_drop, const uint64_t* seed_ptr, const uint64_t* offset_ptr)
-        {
-            float p_undrop = 1.0 - p_drop;
-            p_undrop_in_uint8_t =
-                uint8_t(std::floor(p_undrop * std::numeric_limits<uint8_t>::max()));
-            rp_undrop = 1.0 / p_undrop;
-
-            this->drop_seed.ptr                 = seed_ptr;
-            this->drop_offset.ptr               = offset_ptr;
-            this->is_drop_seed_offset_from_host = false;
-        }
-
-        float rp_undrop             = 1;
-        uint8_t p_undrop_in_uint8_t = std::numeric_limits<uint8_t>::max();
-        bool is_store_randval       = false;
-        void* rand_val_ptr          = nullptr;
-
-        ck_tile::index_t stride_randval       = 0;
-        ck_tile::index_t nhead_stride_randval = 0;
-    };
-
-    struct SageAttnFwdBatchModeDropoutKargs : SageAttnFwdCommonDropoutKargs
-    {
-        ck_tile::index_t batch_stride_randval = 0;
-    };
-
     struct SageAttnFwdSkipMinSeqlenQKargs
     {
         ck_tile::index_t min_seqlen_q = 0;
@@ -224,9 +168,7 @@ struct SageAttnFwdKernel
           std::conditional_t<kStoreLSE, SageAttnFwdCommonLSEKargs, SageAttnFwdEmptyKargs<2>>,
           std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
                              SageAttnFwdCommonQScaleKargs,
-                             SageAttnFwdEmptyKargs<3>>,
-          std::
-              conditional_t<kHasDropout, SageAttnFwdBatchModeDropoutKargs, SageAttnFwdEmptyKargs<4>>
+                             SageAttnFwdEmptyKargs<3>>
     {
         ck_tile::index_t batch_stride_q;
         ck_tile::index_t batch_stride_k;
@@ -251,10 +193,9 @@ struct SageAttnFwdKernel
           std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
                              SageAttnFwdCommonQScaleKargs,
                              SageAttnFwdEmptyKargs<3>>,
-          std::conditional_t<kHasDropout, SageAttnFwdCommonDropoutKargs, SageAttnFwdEmptyKargs<4>>,
           std::conditional_t<kSkipMinSeqlenQ,
                              SageAttnFwdSkipMinSeqlenQKargs,
-                             SageAttnFwdEmptyKargs<5>>
+                             SageAttnFwdEmptyKargs<4>>
     {
         const int32_t* seqstart_q_ptr;
         const int32_t* seqstart_k_ptr;
@@ -285,7 +226,6 @@ struct SageAttnFwdKernel
                   const void* q_descale_ptr,
                   const void* k_descale_ptr,
                   const void* v_descale_ptr,
-                  void* rand_val_ptr,
                   void* lse_ptr,
                   void* o_ptr,
                   ck_tile::index_t seqlen_q,
@@ -299,29 +239,22 @@ struct SageAttnFwdKernel
                   ck_tile::index_t stride_k,
                   ck_tile::index_t stride_v,
                   ck_tile::index_t stride_bias,
-                  ck_tile::index_t stride_randval,
                   ck_tile::index_t stride_o,
                   ck_tile::index_t nhead_stride_q,
                   ck_tile::index_t nhead_stride_k,
                   ck_tile::index_t nhead_stride_v,
                   ck_tile::index_t nhead_stride_bias,
-                  ck_tile::index_t nhead_stride_randval,
                   ck_tile::index_t nhead_stride_lse,
                   ck_tile::index_t nhead_stride_o,
                   ck_tile::index_t batch_stride_q,
                   ck_tile::index_t batch_stride_k,
                   ck_tile::index_t batch_stride_v,
                   ck_tile::index_t batch_stride_bias,
-                  ck_tile::index_t batch_stride_randval,
                   ck_tile::index_t batch_stride_lse,
                   ck_tile::index_t batch_stride_o,
                   ck_tile::index_t window_size_left,
                   ck_tile::index_t window_size_right,
                   ck_tile::index_t mask_type,
-                  float p_drop,
-                  bool s_randval,
-                  std::variant<std::pair<uint64_t, uint64_t>, std::pair<const void*, const void*>>
-                      drop_seed_offset,
                   const void* cu_seqlen_q_ptr = nullptr,
                   const void* cu_seqlen_k_ptr = nullptr)
     {
@@ -352,7 +285,6 @@ struct SageAttnFwdKernel
                     {},               // placeholder for mask
                     {},               // placeholder for lse
                     {},               // placeholder for qscale
-                    {},               // placeholder for dropout
                     batch_stride_q,
                     batch_stride_k,
                     batch_stride_v,
@@ -387,27 +319,6 @@ struct SageAttnFwdKernel
             kargs.q_descale_ptr = q_descale_ptr;
             kargs.k_descale_ptr = k_descale_ptr;
             kargs.v_descale_ptr = v_descale_ptr;
-        }
-        if constexpr(kHasDropout)
-        {
-            if(drop_seed_offset.index() == 0) // seed & offset come from host
-            {
-                const auto& [seed, offset] = std::get<0>(drop_seed_offset);
-                kargs.init_dropout(p_drop, seed, offset);
-            }
-            else // seed & offset come from device
-            {
-                const auto& [seed_ptr, offset_ptr] = std::get<1>(drop_seed_offset);
-                kargs.init_dropout(p_drop,
-                                   reinterpret_cast<const uint64_t*>(seed_ptr),
-                                   reinterpret_cast<const uint64_t*>(offset_ptr));
-            }
-
-            kargs.rand_val_ptr         = rand_val_ptr;
-            kargs.stride_randval       = stride_randval;
-            kargs.nhead_stride_randval = nhead_stride_randval;
-            kargs.batch_stride_randval = batch_stride_randval;
-            kargs.is_store_randval     = s_randval;
         }
         // logits_soft_cap is always disabled
 
@@ -619,7 +530,6 @@ struct SageAttnFwdKernel
                   const void* q_descale_ptr,
                   const void* k_descale_ptr,
                   const void* v_descale_ptr,
-                  void* rand_val_ptr,
                   void* lse_ptr,
                   void* o_ptr,
                   const void* seqstart_q_ptr,
@@ -635,23 +545,17 @@ struct SageAttnFwdKernel
                   ck_tile::index_t stride_k,
                   ck_tile::index_t stride_v,
                   ck_tile::index_t stride_bias,
-                  ck_tile::index_t stride_randval,
                   ck_tile::index_t stride_o,
                   ck_tile::index_t nhead_stride_q,
                   ck_tile::index_t nhead_stride_k,
                   ck_tile::index_t nhead_stride_v,
                   ck_tile::index_t nhead_stride_bias,
-                  ck_tile::index_t nhead_stride_randval,
                   ck_tile::index_t nhead_stride_lse,
                   ck_tile::index_t nhead_stride_o,
                   ck_tile::index_t window_size_left,
                   ck_tile::index_t window_size_right,
                   ck_tile::index_t mask_type,
                   ck_tile::index_t min_seqlen_q,
-                  float p_drop,
-                  bool s_randval,
-                  std::variant<std::pair<uint64_t, uint64_t>, std::pair<const void*, const void*>>
-                      drop_seed_offset,
                   const void* cu_seqlen_q_ptr = nullptr,
                   const void* cu_seqlen_k_ptr = nullptr)
     {
@@ -682,7 +586,6 @@ struct SageAttnFwdKernel
                     {},               // placeholder for mask
                     {},               // placeholder for lse
                     {},               // placeholder for qscale
-                    {},               // placeholder for dropout
                     {},               // placeholder for min_seqlen_q
                     reinterpret_cast<const int32_t*>(seqstart_q_ptr),
                     reinterpret_cast<const int32_t*>(seqstart_k_ptr),
@@ -716,26 +619,6 @@ struct SageAttnFwdKernel
             kargs.q_descale_ptr = q_descale_ptr;
             kargs.k_descale_ptr = k_descale_ptr;
             kargs.v_descale_ptr = v_descale_ptr;
-        }
-        if constexpr(kHasDropout)
-        {
-            if(drop_seed_offset.index() == 0) // seed & offset come from host
-            {
-                const auto& [seed, offset] = std::get<0>(drop_seed_offset);
-                kargs.init_dropout(p_drop, seed, offset);
-            }
-            else // seed & offset come from device
-            {
-                const auto& [seed_ptr, offset_ptr] = std::get<1>(drop_seed_offset);
-                kargs.init_dropout(p_drop,
-                                   reinterpret_cast<const uint64_t*>(seed_ptr),
-                                   reinterpret_cast<const uint64_t*>(offset_ptr));
-            }
-
-            kargs.rand_val_ptr         = rand_val_ptr;
-            kargs.stride_randval       = stride_randval;
-            kargs.nhead_stride_randval = nhead_stride_randval;
-            kargs.is_store_randval     = s_randval;
         }
         // logits_soft_cap is always disabled
         if constexpr(kSkipMinSeqlenQ)
@@ -1050,13 +933,12 @@ struct SageAttnFwdKernel
             const index_t i_m0 = amd_wave_read_first_lane(i_tile_m * SageAttnPipeline::kM0);
             const index_t i_n1 = amd_wave_read_first_lane(i_tile_n * SageAttnPipeline::kN1);
 
-            long_index_t batch_offset_q       = 0;
-            long_index_t batch_offset_k       = 0;
-            long_index_t batch_offset_v       = 0;
-            long_index_t batch_offset_bias    = 0;
-            long_index_t batch_offset_randval = 0;
-            long_index_t batch_offset_lse     = 0;
-            long_index_t batch_offset_o       = 0;
+            long_index_t batch_offset_q    = 0;
+            long_index_t batch_offset_k    = 0;
+            long_index_t batch_offset_v    = 0;
+            long_index_t batch_offset_bias = 0;
+            long_index_t batch_offset_lse  = 0;
+            long_index_t batch_offset_o    = 0;
 
             if constexpr(kIsGroupMode)
             {
@@ -1083,10 +965,6 @@ struct SageAttnFwdKernel
                 {
                     // LSE follows the physical layout to stay consistent with other tensors
                     batch_offset_lse = query_start;
-                }
-                if constexpr(kHasDropout)
-                {
-                    batch_offset_randval = query_start * kargs.stride_randval;
                 }
                 batch_offset_o = query_start * kargs.stride_o;
 
@@ -1149,11 +1027,6 @@ struct SageAttnFwdKernel
                 if constexpr(kStoreLSE)
                 {
                     batch_offset_lse = static_cast<long_index_t>(i_batch) * kargs.batch_stride_lse;
-                }
-                if constexpr(kHasDropout)
-                {
-                    batch_offset_randval =
-                        static_cast<long_index_t>(i_batch) * kargs.batch_stride_randval;
                 }
                 batch_offset_o = static_cast<long_index_t>(i_batch) * kargs.batch_stride_o;
 
@@ -1350,59 +1223,6 @@ struct SageAttnFwdKernel
                 }
             }();
 
-            auto dropout = [&, i_nhead_ = i_nhead, i_batch_ = i_batch]() {
-                if constexpr(kHasDropout)
-                {
-                    return BlockDropout{i_batch_,
-                                        i_nhead_,
-                                        kargs.num_head_q,
-                                        kargs.is_drop_seed_offset_from_host ? kargs.drop_seed.val
-                                                                            : *kargs.drop_seed.ptr,
-                                        kargs.is_drop_seed_offset_from_host
-                                            ? kargs.drop_offset.val
-                                            : *kargs.drop_offset.ptr,
-                                        kargs.rp_undrop,
-                                        kargs.p_undrop_in_uint8_t,
-                                        kargs.is_store_randval};
-                }
-                else
-                {
-                    return NullBlockDropout{};
-                };
-            }();
-
-            auto randval_dram_window = [&, i_nhead_ = i_nhead]() {
-                constexpr auto randval_dram_window_lengths =
-                    make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kN0>{});
-                if constexpr(kHasDropout)
-                {
-                    RandValOutputDataType* rand_val_ptr =
-                        reinterpret_cast<RandValOutputDataType*>(kargs.rand_val_ptr) +
-                        static_cast<long_index_t>(i_nhead_) * kargs.nhead_stride_randval +
-                        batch_offset_randval;
-
-                    const auto randval_dram = [&]() {
-                        const auto randval_dram_naive =
-                            make_naive_tensor_view<address_space_enum::global>(
-                                rand_val_ptr,
-                                make_tuple(kargs.seqlen_q, kargs.seqlen_k),
-                                make_tuple(kargs.stride_randval, 1),
-                                number<SageAttnPipeline::kAlignmentRandVal>{},
-                                number<1>{});
-
-                        return pad_tensor_view(randval_dram_naive,
-                                               randval_dram_window_lengths,
-                                               sequence<kPadSeqLenQ, kPadSeqLenK>{});
-                    }();
-
-                    return make_tile_window(randval_dram, randval_dram_window_lengths, {i_m0, 0});
-                }
-                else
-                {
-                    return make_null_tile_window(randval_dram_window_lengths);
-                }
-            }();
-
             FmhaMask mask = [&]() {
                 if constexpr(kHasMask)
                     return ck_tile::make_generic_attention_mask_from_lr_window<FmhaMask>(
@@ -1496,7 +1316,6 @@ struct SageAttnFwdKernel
                                               identity{}, // v_element_func
                                               bias_dram_window,
                                               identity{}, // bias_element_func
-                                              randval_dram_window,
                                               lse_dram_window,
                                               identity{}, // lse_element_func
                                               identity{}, // s_acc_element_func
@@ -1509,8 +1328,7 @@ struct SageAttnFwdKernel
                                               variant,
                                               variant_params,
                                               block_indices,
-                                              smem_ptr,
-                                              dropout);
+                                              smem_ptr);
                 }
                 else
                 {
@@ -1518,7 +1336,6 @@ struct SageAttnFwdKernel
                                               k_dram_window,
                                               v_dram_window,
                                               bias_dram_window,
-                                              randval_dram_window,
                                               lse_dram_window,
                                               mask,
                                               position_encoding,
@@ -1526,8 +1343,7 @@ struct SageAttnFwdKernel
                                               variant,
                                               variant_params,
                                               block_indices,
-                                              smem_ptr,
-                                              dropout);
+                                              smem_ptr);
                 }
             }();
 

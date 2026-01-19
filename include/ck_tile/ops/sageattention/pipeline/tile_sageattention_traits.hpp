@@ -18,7 +18,6 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           BlockAttentionBiasEnum BiasEnum_,
           bool kHasBiasGrad_,
           bool kStoreLSE_,
-          bool kHasDropout_,
           BlockAttentionQuantScaleEnum QScaleEnum_,
           index_t kBlockPerCu_  = -1,    /* overwrite occupancy if not -1 */
           bool kSkipMinSeqlenQ_ = false, /* skip min seqlen q while chunked prefill */
@@ -33,7 +32,6 @@ struct TileSageAttnTraits
     static constexpr auto BiasEnum          = BiasEnum_;
     static constexpr bool kHasBiasGrad      = kHasBiasGrad_;
     static constexpr bool kStoreLSE         = kStoreLSE_;
-    static constexpr bool kHasDropout       = kHasDropout_;
     static constexpr auto QScaleEnum        = QScaleEnum_;
     static constexpr index_t kBlockPerCu    = kBlockPerCu_;
     static constexpr bool kSkipMinSeqlenQ   = kSkipMinSeqlenQ_;
