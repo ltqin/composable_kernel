@@ -7,7 +7,7 @@
 #include "ck_tile/host/device_prop.hpp"
 #include "ck_tile/host/kernel_launch.hpp"
 #include "ck_tile/ops/epilogue.hpp"
-#include "ck_tile/ops/fmha.hpp"
+#include "ck_tile/ops/sageattention.hpp"
 
 #include "bias.hpp"
 #include "mask.hpp"
@@ -243,7 +243,6 @@ struct fmha_fwd_args
     ck_tile::index_t nhead_k;
 
     float scale_s;
-    float logits_soft_cap;
 
     ck_tile::index_t stride_q;
     ck_tile::index_t stride_k;
@@ -334,8 +333,6 @@ struct fmha_fwd_pagedkv_args
     float scale_p;
     float scale_o;
 
-    float logits_soft_cap;
-
     ck_tile::index_t stride_q;
     ck_tile::index_t stride_k;
     ck_tile::index_t stride_v;
@@ -418,8 +415,6 @@ struct fmha_fwd_splitkv_args
     float scale_s;
     float scale_p;
     float scale_o;
-
-    float logits_soft_cap;
 
     ck_tile::index_t stride_q;
     ck_tile::index_t stride_k;
@@ -559,8 +554,6 @@ struct fmha_batch_prefill_args
     float scale_p;
     float scale_o;
 
-    float logits_soft_cap;
-
     ck_tile::index_t stride_q;
     ck_tile::index_t stride_k;
     ck_tile::index_t stride_v;
@@ -594,128 +587,126 @@ struct fmha_batch_prefill_args
         drop_seed_offset;
 };
 
-template <typename FmhaKernel>
-auto fmha_fwd_create_kargs_and_grids(fmha_fwd_args args)
+template <typename SageAttnKernel>
+auto sageattn_fwd_create_kargs_and_grids(fmha_fwd_args args)
 {
     assert(args.nhead_q % args.nhead_k == 0);
     auto kargs = [&] {
         // create group mode kernel arguments
-        if constexpr(FmhaKernel::kIsGroupMode)
+        if constexpr(SageAttnKernel::kIsGroupMode)
         {
-            return FmhaKernel::MakeKargsImpl(args.q_ptr,
-                                             args.k_ptr,
-                                             args.v_ptr,
-                                             args.bias_ptr,
-                                             args.q_descale_ptr,
-                                             args.k_descale_ptr,
-                                             args.v_descale_ptr,
-                                             args.rand_val_ptr,
-                                             args.lse_ptr,
-                                             args.o_ptr,
-                                             args.seqstart_q_ptr,
-                                             args.seqstart_k_ptr,
-                                             args.seqlen_q_ptr,
-                                             args.seqlen_k_ptr,
-                                             args.hdim_q,
-                                             args.hdim_v,
-                                             args.nhead_q,
-                                             args.nhead_q / args.nhead_k,
-                                             args.scale_s,
-                                             args.logits_soft_cap,
-                                             args.stride_q,
-                                             args.stride_k,
-                                             args.stride_v,
-                                             args.stride_bias,
-                                             args.stride_randval,
-                                             args.stride_o,
-                                             args.nhead_stride_q,
-                                             args.nhead_stride_k,
-                                             args.nhead_stride_v,
-                                             args.nhead_stride_bias,
-                                             args.nhead_stride_randval,
-                                             args.nhead_stride_lse,
-                                             args.nhead_stride_o,
-                                             args.window_size_left,
-                                             args.window_size_right,
-                                             args.sink_size,
-                                             args.mask_type,
-                                             args.min_seqlen_q,
-                                             args.p_drop,
-                                             args.s_randval,
-                                             args.drop_seed_offset,
-                                             args.cu_seqlen_q_ptr,
-                                             args.cu_seqlen_k_ptr,
-                                             args.sink_ptr);
+            return SageAttnKernel::MakeKargsImpl(args.q_ptr,
+                                                 args.k_ptr,
+                                                 args.v_ptr,
+                                                 args.bias_ptr,
+                                                 args.q_descale_ptr,
+                                                 args.k_descale_ptr,
+                                                 args.v_descale_ptr,
+                                                 args.rand_val_ptr,
+                                                 args.lse_ptr,
+                                                 args.o_ptr,
+                                                 args.seqstart_q_ptr,
+                                                 args.seqstart_k_ptr,
+                                                 args.seqlen_q_ptr,
+                                                 args.seqlen_k_ptr,
+                                                 args.hdim_q,
+                                                 args.hdim_v,
+                                                 args.nhead_q,
+                                                 args.nhead_q / args.nhead_k,
+                                                 args.scale_s,
+                                                 args.stride_q,
+                                                 args.stride_k,
+                                                 args.stride_v,
+                                                 args.stride_bias,
+                                                 args.stride_randval,
+                                                 args.stride_o,
+                                                 args.nhead_stride_q,
+                                                 args.nhead_stride_k,
+                                                 args.nhead_stride_v,
+                                                 args.nhead_stride_bias,
+                                                 args.nhead_stride_randval,
+                                                 args.nhead_stride_lse,
+                                                 args.nhead_stride_o,
+                                                 args.window_size_left,
+                                                 args.window_size_right,
+                                                 args.sink_size,
+                                                 args.mask_type,
+                                                 args.min_seqlen_q,
+                                                 args.p_drop,
+                                                 args.s_randval,
+                                                 args.drop_seed_offset,
+                                                 args.cu_seqlen_q_ptr,
+                                                 args.cu_seqlen_k_ptr,
+                                                 args.sink_ptr);
         }
         else
         { // create batch mode kernel arguments
-            return FmhaKernel::MakeKargsImpl(args.q_ptr,
-                                             args.k_ptr,
-                                             args.v_ptr,
-                                             args.bias_ptr,
-                                             args.q_descale_ptr,
-                                             args.k_descale_ptr,
-                                             args.v_descale_ptr,
-                                             args.rand_val_ptr,
-                                             args.lse_ptr,
-                                             args.o_ptr,
-                                             args.seqlen_q,
-                                             args.seqlen_k,
-                                             args.hdim_q,
-                                             args.hdim_v,
-                                             args.nhead_q,
-                                             args.nhead_q / args.nhead_k,
-                                             args.scale_s,
-                                             args.logits_soft_cap,
-                                             args.stride_q,
-                                             args.stride_k,
-                                             args.stride_v,
-                                             args.stride_bias,
-                                             args.stride_randval,
-                                             args.stride_o,
-                                             args.nhead_stride_q,
-                                             args.nhead_stride_k,
-                                             args.nhead_stride_v,
-                                             args.nhead_stride_bias,
-                                             args.nhead_stride_randval,
-                                             args.nhead_stride_lse,
-                                             args.nhead_stride_o,
-                                             args.batch_stride_q,
-                                             args.batch_stride_k,
-                                             args.batch_stride_v,
-                                             args.batch_stride_bias,
-                                             args.batch_stride_randval,
-                                             args.batch_stride_lse,
-                                             args.batch_stride_o,
-                                             args.window_size_left,
-                                             args.window_size_right,
-                                             args.sink_size,
-                                             args.mask_type,
-                                             args.p_drop,
-                                             args.s_randval,
-                                             args.drop_seed_offset,
-                                             args.cu_seqlen_q_ptr,
-                                             args.cu_seqlen_k_ptr,
-                                             args.sink_ptr);
+            return SageAttnKernel::MakeKargsImpl(args.q_ptr,
+                                                 args.k_ptr,
+                                                 args.v_ptr,
+                                                 args.bias_ptr,
+                                                 args.q_descale_ptr,
+                                                 args.k_descale_ptr,
+                                                 args.v_descale_ptr,
+                                                 args.rand_val_ptr,
+                                                 args.lse_ptr,
+                                                 args.o_ptr,
+                                                 args.seqlen_q,
+                                                 args.seqlen_k,
+                                                 args.hdim_q,
+                                                 args.hdim_v,
+                                                 args.nhead_q,
+                                                 args.nhead_q / args.nhead_k,
+                                                 args.scale_s,
+                                                 args.stride_q,
+                                                 args.stride_k,
+                                                 args.stride_v,
+                                                 args.stride_bias,
+                                                 args.stride_randval,
+                                                 args.stride_o,
+                                                 args.nhead_stride_q,
+                                                 args.nhead_stride_k,
+                                                 args.nhead_stride_v,
+                                                 args.nhead_stride_bias,
+                                                 args.nhead_stride_randval,
+                                                 args.nhead_stride_lse,
+                                                 args.nhead_stride_o,
+                                                 args.batch_stride_q,
+                                                 args.batch_stride_k,
+                                                 args.batch_stride_v,
+                                                 args.batch_stride_bias,
+                                                 args.batch_stride_randval,
+                                                 args.batch_stride_lse,
+                                                 args.batch_stride_o,
+                                                 args.window_size_left,
+                                                 args.window_size_right,
+                                                 args.sink_size,
+                                                 args.mask_type,
+                                                 args.p_drop,
+                                                 args.s_randval,
+                                                 args.drop_seed_offset,
+                                                 args.cu_seqlen_q_ptr,
+                                                 args.cu_seqlen_k_ptr,
+                                                 args.sink_ptr);
         }
     }();
 
-    if constexpr(FmhaKernel::kIsGroupMode)
+    if constexpr(SageAttnKernel::kIsGroupMode)
     {
-        dim3 grids = FmhaKernel::GridSize(
+        dim3 grids = SageAttnKernel::GridSize(
             args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v, args.seqlen_k_ptr != nullptr);
         return ck_tile::make_tuple(kargs, grids);
     }
     else
     {
-        dim3 grids =
-            FmhaKernel::GridSize(args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v, false);
+        dim3 grids = SageAttnKernel::GridSize(
+            args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v, false);
         return ck_tile::make_tuple(kargs, grids);
     }
 }
 
-template <typename FmhaKernel>
-auto fmha_fwd_v3_create_kargs_and_grids(fmha_fwd_args args)
+template <typename SageAttnKernel>
+auto sageattn_fwd_v3_create_kargs_and_grids(fmha_fwd_args args)
 {
     /// NOTICE: This was borrowed from Aiter. Make sure the selected remap_opt setting truly
     /// maximizes the kernel's performance.
@@ -734,190 +725,186 @@ auto fmha_fwd_v3_create_kargs_and_grids(fmha_fwd_args args)
     }
 
     auto kargs = [&] {
-        if constexpr(FmhaKernel::kIsGroupMode)
+        if constexpr(SageAttnKernel::kIsGroupMode)
         {
-            return FmhaKernel::MakeKargs(args.q_ptr,
-                                         args.k_ptr,
-                                         args.v_ptr,
-                                         nullptr, // lse_ptr
-                                         args.o_ptr,
-                                         args.seqstart_q_ptr,
-                                         args.seqstart_k_ptr,
-                                         args.seqlen_q_ptr,
-                                         args.seqlen_k_ptr,
-                                         args.hdim_q,
-                                         args.hdim_v,
-                                         args.nhead_q,
-                                         args.nhead_q / args.nhead_k,
-                                         args.scale_s,
-                                         args.logits_soft_cap,
-                                         args.stride_q,
-                                         args.stride_k,
-                                         args.stride_v,
-                                         args.stride_o,
-                                         args.nhead_stride_q,
-                                         args.nhead_stride_k,
-                                         args.nhead_stride_v,
-                                         0, // nhead_stride_lse
-                                         args.nhead_stride_o,
-                                         args.window_size_left,
-                                         args.window_size_right,
-                                         args.mask_type,
-                                         remap_opt,
-                                         args.cu_seqlen_q_ptr,
-                                         args.cu_seqlen_k_ptr);
+            return SageAttnKernel::MakeKargs(args.q_ptr,
+                                             args.k_ptr,
+                                             args.v_ptr,
+                                             nullptr, // lse_ptr
+                                             args.o_ptr,
+                                             args.seqstart_q_ptr,
+                                             args.seqstart_k_ptr,
+                                             args.seqlen_q_ptr,
+                                             args.seqlen_k_ptr,
+                                             args.hdim_q,
+                                             args.hdim_v,
+                                             args.nhead_q,
+                                             args.nhead_q / args.nhead_k,
+                                             args.scale_s,
+                                             args.stride_q,
+                                             args.stride_k,
+                                             args.stride_v,
+                                             args.stride_o,
+                                             args.nhead_stride_q,
+                                             args.nhead_stride_k,
+                                             args.nhead_stride_v,
+                                             0, // nhead_stride_lse
+                                             args.nhead_stride_o,
+                                             args.window_size_left,
+                                             args.window_size_right,
+                                             args.mask_type,
+                                             remap_opt,
+                                             args.cu_seqlen_q_ptr,
+                                             args.cu_seqlen_k_ptr);
         }
         else
         {
-            return FmhaKernel::MakeKargs(args.q_ptr,
-                                         args.k_ptr,
-                                         args.v_ptr,
-                                         nullptr, // lse_ptr
-                                         args.o_ptr,
-                                         args.seqlen_q,
-                                         args.seqlen_k,
-                                         args.hdim_q,
-                                         args.hdim_v,
-                                         args.nhead_q,
-                                         args.nhead_q / args.nhead_k,
-                                         args.scale_s,
-                                         args.logits_soft_cap,
-                                         args.stride_q,
-                                         args.stride_k,
-                                         args.stride_v,
-                                         args.stride_o,
-                                         args.nhead_stride_q,
-                                         args.nhead_stride_k,
-                                         args.nhead_stride_v,
-                                         0, // nhead_stride_lse
-                                         args.nhead_stride_o,
-                                         args.batch_stride_q,
-                                         args.batch_stride_k,
-                                         args.batch_stride_v,
-                                         0, // batch_stride_lse
-                                         args.batch_stride_o,
-                                         args.window_size_left,
-                                         args.window_size_right,
-                                         args.mask_type,
-                                         remap_opt,
-                                         args.cu_seqlen_q_ptr,
-                                         args.cu_seqlen_k_ptr);
+            return SageAttnKernel::MakeKargs(args.q_ptr,
+                                             args.k_ptr,
+                                             args.v_ptr,
+                                             nullptr, // lse_ptr
+                                             args.o_ptr,
+                                             args.seqlen_q,
+                                             args.seqlen_k,
+                                             args.hdim_q,
+                                             args.hdim_v,
+                                             args.nhead_q,
+                                             args.nhead_q / args.nhead_k,
+                                             args.scale_s,
+                                             args.stride_q,
+                                             args.stride_k,
+                                             args.stride_v,
+                                             args.stride_o,
+                                             args.nhead_stride_q,
+                                             args.nhead_stride_k,
+                                             args.nhead_stride_v,
+                                             0, // nhead_stride_lse
+                                             args.nhead_stride_o,
+                                             args.batch_stride_q,
+                                             args.batch_stride_k,
+                                             args.batch_stride_v,
+                                             0, // batch_stride_lse
+                                             args.batch_stride_o,
+                                             args.window_size_left,
+                                             args.window_size_right,
+                                             args.mask_type,
+                                             remap_opt,
+                                             args.cu_seqlen_q_ptr,
+                                             args.cu_seqlen_k_ptr);
         }
     }();
 
-    dim3 grids = FmhaKernel::GridSize(args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v);
+    dim3 grids = SageAttnKernel::GridSize(args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v);
 
     return ck_tile::make_tuple(kargs, grids);
 }
 
-template <typename FmhaKernel>
-auto fmha_fwd_pagedkv_create_kargs_and_grids(fmha_fwd_pagedkv_args args)
+template <typename SageAttnKernel>
+auto sageattn_fwd_pagedkv_create_kargs_and_grids(fmha_fwd_pagedkv_args args)
 {
     assert(args.nhead_q % args.nhead_k == 0);
     auto kargs = [&] {
         // create group mode kernel arguments
-        if constexpr(FmhaKernel::kIsGroupMode)
+        if constexpr(SageAttnKernel::kIsGroupMode)
         {
-            return FmhaKernel::MakeKargs(args.q_ptr,
-                                         args.k_ptr,
-                                         args.v_ptr,
-                                         args.bias_ptr,
-                                         args.lse_ptr,
-                                         args.o_ptr,
-                                         args.seqstart_q_ptr,
-                                         args.seqstart_k_ptr,
-                                         args.seqlen_k_ptr,
-                                         args.hdim_q,
-                                         args.hdim_v,
-                                         args.nhead_q,
-                                         args.nhead_q / args.nhead_k,
-                                         args.block_table_ptr,
-                                         args.batch_stride_block_table,
-                                         args.page_block_size,
-                                         args.is_gappy,
-                                         args.scale_s,
-                                         args.scale_p,
-                                         args.scale_o,
-                                         args.logits_soft_cap,
-                                         args.stride_q,
-                                         args.stride_k,
-                                         args.stride_v,
-                                         args.stride_bias,
-                                         args.stride_o,
-                                         args.nhead_stride_q,
-                                         args.nhead_stride_k,
-                                         args.nhead_stride_v,
-                                         args.nhead_stride_bias,
-                                         args.nhead_stride_lse,
-                                         args.nhead_stride_o,
-                                         args.batch_stride_k,
-                                         args.batch_stride_v,
-                                         args.window_size_left,
-                                         args.window_size_right,
-                                         args.sink_size,
-                                         args.mask_type,
-                                         args.min_seqlen_q,
-                                         args.sink_ptr);
+            return SageAttnKernel::MakeKargs(args.q_ptr,
+                                             args.k_ptr,
+                                             args.v_ptr,
+                                             args.bias_ptr,
+                                             args.lse_ptr,
+                                             args.o_ptr,
+                                             args.seqstart_q_ptr,
+                                             args.seqstart_k_ptr,
+                                             args.seqlen_k_ptr,
+                                             args.hdim_q,
+                                             args.hdim_v,
+                                             args.nhead_q,
+                                             args.nhead_q / args.nhead_k,
+                                             args.block_table_ptr,
+                                             args.batch_stride_block_table,
+                                             args.page_block_size,
+                                             args.is_gappy,
+                                             args.scale_s,
+                                             args.scale_p,
+                                             args.scale_o,
+                                             args.stride_q,
+                                             args.stride_k,
+                                             args.stride_v,
+                                             args.stride_bias,
+                                             args.stride_o,
+                                             args.nhead_stride_q,
+                                             args.nhead_stride_k,
+                                             args.nhead_stride_v,
+                                             args.nhead_stride_bias,
+                                             args.nhead_stride_lse,
+                                             args.nhead_stride_o,
+                                             args.batch_stride_k,
+                                             args.batch_stride_v,
+                                             args.window_size_left,
+                                             args.window_size_right,
+                                             args.sink_size,
+                                             args.mask_type,
+                                             args.min_seqlen_q,
+                                             args.sink_ptr);
         }
         else
         { // create batch mode kernel arguments
-            return FmhaKernel::MakeKargs(args.q_ptr,
-                                         args.k_ptr,
-                                         args.v_ptr,
-                                         args.bias_ptr,
-                                         args.lse_ptr,
-                                         args.o_ptr,
-                                         args.seqlen_q,
-                                         args.seqlen_k,
-                                         args.seqlen_k_ptr,
-                                         args.hdim_q,
-                                         args.hdim_v,
-                                         args.nhead_q,
-                                         args.nhead_q / args.nhead_k,
-                                         args.block_table_ptr,
-                                         args.batch_stride_block_table,
-                                         args.page_block_size,
-                                         args.cache_batch_idx,
-                                         args.scale_s,
-                                         args.scale_p,
-                                         args.scale_o,
-                                         args.logits_soft_cap,
-                                         args.stride_q,
-                                         args.stride_k,
-                                         args.stride_v,
-                                         args.stride_bias,
-                                         args.stride_o,
-                                         args.nhead_stride_q,
-                                         args.nhead_stride_k,
-                                         args.nhead_stride_v,
-                                         args.nhead_stride_bias,
-                                         args.nhead_stride_lse,
-                                         args.nhead_stride_o,
-                                         args.batch_stride_q,
-                                         args.batch_stride_k,
-                                         args.batch_stride_v,
-                                         args.batch_stride_bias,
-                                         args.batch_stride_lse,
-                                         args.batch_stride_o,
-                                         args.window_size_left,
-                                         args.window_size_right,
-                                         args.sink_size,
-                                         args.mask_type,
-                                         args.sink_ptr);
+            return SageAttnKernel::MakeKargs(args.q_ptr,
+                                             args.k_ptr,
+                                             args.v_ptr,
+                                             args.bias_ptr,
+                                             args.lse_ptr,
+                                             args.o_ptr,
+                                             args.seqlen_q,
+                                             args.seqlen_k,
+                                             args.seqlen_k_ptr,
+                                             args.hdim_q,
+                                             args.hdim_v,
+                                             args.nhead_q,
+                                             args.nhead_q / args.nhead_k,
+                                             args.block_table_ptr,
+                                             args.batch_stride_block_table,
+                                             args.page_block_size,
+                                             args.cache_batch_idx,
+                                             args.scale_s,
+                                             args.scale_p,
+                                             args.scale_o,
+                                             args.stride_q,
+                                             args.stride_k,
+                                             args.stride_v,
+                                             args.stride_bias,
+                                             args.stride_o,
+                                             args.nhead_stride_q,
+                                             args.nhead_stride_k,
+                                             args.nhead_stride_v,
+                                             args.nhead_stride_bias,
+                                             args.nhead_stride_lse,
+                                             args.nhead_stride_o,
+                                             args.batch_stride_q,
+                                             args.batch_stride_k,
+                                             args.batch_stride_v,
+                                             args.batch_stride_bias,
+                                             args.batch_stride_lse,
+                                             args.batch_stride_o,
+                                             args.window_size_left,
+                                             args.window_size_right,
+                                             args.sink_size,
+                                             args.mask_type,
+                                             args.sink_ptr);
         }
     }();
 
-    // FmhaKernel::PrintParameters(kargs, args.batch);
-    if constexpr(FmhaKernel::kIsGroupMode)
+    // SageAttnKernel::PrintParameters(kargs, args.batch);
+    if constexpr(SageAttnKernel::kIsGroupMode)
     {
-        dim3 grids = FmhaKernel::GridSize(
+        dim3 grids = SageAttnKernel::GridSize(
             args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v, args.seqlen_k_ptr != nullptr);
         return ck_tile::make_tuple(kargs, grids);
     }
     else
     {
-        dim3 grids =
-            FmhaKernel::GridSize(args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v, false);
+        dim3 grids = SageAttnKernel::GridSize(
+            args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v, false);
         return ck_tile::make_tuple(kargs, grids);
     }
 }
@@ -951,7 +938,6 @@ auto fmha_fwd_splitkv_create_kargs_and_grids(fmha_fwd_splitkv_args args)
                                      args.is_gappy,
                                      args.scale_s,
                                      args.scale_p,
-                                     args.logits_soft_cap,
                                      args.stride_q,
                                      args.stride_k,
                                      args.stride_v,
@@ -996,7 +982,6 @@ auto fmha_fwd_splitkv_create_kargs_and_grids(fmha_fwd_splitkv_args args)
                                      args.cache_batch_idx,
                                      args.scale_s,
                                      args.scale_p,
-                                     args.logits_soft_cap,
                                      args.stride_q,
                                      args.stride_k,
                                      args.stride_v,
@@ -1132,13 +1117,13 @@ auto fmha_fwd_appendkv_create_kargs_and_grids(fmha_fwd_appendkv_args args)
     return ck_tile::make_tuple(kargs, grids);
 }
 
-template <typename FmhaKernel>
-auto fmha_batch_prefill_create_kargs_and_grids(fmha_batch_prefill_args args)
+template <typename SageAttnKernel>
+auto sageattn_batch_prefill_create_kargs_and_grids(fmha_batch_prefill_args args)
 {
     assert(args.nhead_q % args.nhead_k == 0);
-    using PageTableKargs            = typename FmhaKernel::PageBlockTableKargs;
+    using PageTableKargs            = typename SageAttnKernel::PageBlockTableKargs;
     const PageTableKargs page_table = [&]() {
-        if constexpr(FmhaKernel::kKVLookupTable ==
+        if constexpr(SageAttnKernel::kKVLookupTable ==
                      ck_tile::BlockAttentionKVCacheLookupTableEnum::SGLANG_PAGE_TABLE_1D)
         {
             return PageTableKargs{reinterpret_cast<const int32_t*>(args.kv_indptr),
@@ -1154,110 +1139,108 @@ auto fmha_batch_prefill_create_kargs_and_grids(fmha_batch_prefill_args args)
     }();
     auto kargs = [&] {
         // create group mode kernel arguments
-        if constexpr(FmhaKernel::kIsGroupMode)
+        if constexpr(SageAttnKernel::kIsGroupMode)
         {
-            return FmhaKernel::MakeKargs(args.q_ptr,
-                                         args.k_ptr,
-                                         args.v_ptr,
-                                         args.bias_ptr,
-                                         args.q_descale_ptr,
-                                         args.k_descale_ptr,
-                                         args.v_descale_ptr,
-                                         args.rand_val_ptr,
-                                         args.lse_ptr,
-                                         args.o_ptr,
-                                         args.seqstart_q_ptr,
-                                         args.hdim_q,
-                                         args.hdim_v,
-                                         args.nhead_q,
-                                         args.nhead_q / args.nhead_k,
-                                         args.num_total_pages,
-                                         args.page_block_size,
-                                         page_table,
-                                         args.scale_s,
-                                         args.scale_p,
-                                         args.scale_o,
-                                         args.logits_soft_cap,
-                                         args.stride_q,
-                                         args.stride_k,
-                                         args.stride_v,
-                                         args.stride_bias,
-                                         args.stride_randval,
-                                         args.stride_o,
-                                         args.nhead_stride_q,
-                                         args.nhead_stride_k,
-                                         args.nhead_stride_v,
-                                         args.nhead_stride_bias,
-                                         args.nhead_stride_randval,
-                                         args.nhead_stride_lse,
-                                         args.nhead_stride_o,
-                                         args.batch_stride_k,
-                                         args.batch_stride_v,
-                                         args.window_size_left,
-                                         args.window_size_right,
-                                         args.sink_size,
-                                         args.mask_type,
-                                         args.p_drop,
-                                         args.s_randval,
-                                         args.drop_seed_offset,
-                                         args.sink_ptr);
+            return SageAttnKernel::MakeKargs(args.q_ptr,
+                                             args.k_ptr,
+                                             args.v_ptr,
+                                             args.bias_ptr,
+                                             args.q_descale_ptr,
+                                             args.k_descale_ptr,
+                                             args.v_descale_ptr,
+                                             args.rand_val_ptr,
+                                             args.lse_ptr,
+                                             args.o_ptr,
+                                             args.seqstart_q_ptr,
+                                             args.hdim_q,
+                                             args.hdim_v,
+                                             args.nhead_q,
+                                             args.nhead_q / args.nhead_k,
+                                             args.num_total_pages,
+                                             args.page_block_size,
+                                             page_table,
+                                             args.scale_s,
+                                             args.scale_p,
+                                             args.scale_o,
+                                             args.stride_q,
+                                             args.stride_k,
+                                             args.stride_v,
+                                             args.stride_bias,
+                                             args.stride_randval,
+                                             args.stride_o,
+                                             args.nhead_stride_q,
+                                             args.nhead_stride_k,
+                                             args.nhead_stride_v,
+                                             args.nhead_stride_bias,
+                                             args.nhead_stride_randval,
+                                             args.nhead_stride_lse,
+                                             args.nhead_stride_o,
+                                             args.batch_stride_k,
+                                             args.batch_stride_v,
+                                             args.window_size_left,
+                                             args.window_size_right,
+                                             args.sink_size,
+                                             args.mask_type,
+                                             args.p_drop,
+                                             args.s_randval,
+                                             args.drop_seed_offset,
+                                             args.sink_ptr);
         }
         else
         { // create batch mode kernel arguments
-            return FmhaKernel::MakeKargs(args.q_ptr,
-                                         args.k_ptr,
-                                         args.v_ptr,
-                                         args.bias_ptr,
-                                         args.q_descale_ptr,
-                                         args.k_descale_ptr,
-                                         args.v_descale_ptr,
-                                         args.rand_val_ptr,
-                                         args.lse_ptr,
-                                         args.o_ptr,
-                                         args.seqlen_q,
-                                         args.hdim_q,
-                                         args.hdim_v,
-                                         args.nhead_q,
-                                         args.nhead_q / args.nhead_k,
-                                         args.num_total_pages,
-                                         args.page_block_size,
-                                         page_table,
-                                         args.scale_s,
-                                         args.scale_p,
-                                         args.scale_o,
-                                         args.logits_soft_cap,
-                                         args.stride_q,
-                                         args.stride_k,
-                                         args.stride_v,
-                                         args.stride_bias,
-                                         args.stride_randval,
-                                         args.stride_o,
-                                         args.nhead_stride_q,
-                                         args.nhead_stride_k,
-                                         args.nhead_stride_v,
-                                         args.nhead_stride_bias,
-                                         args.nhead_stride_randval,
-                                         args.nhead_stride_lse,
-                                         args.nhead_stride_o,
-                                         args.batch_stride_q,
-                                         args.batch_stride_k,
-                                         args.batch_stride_v,
-                                         args.batch_stride_bias,
-                                         args.batch_stride_randval,
-                                         args.batch_stride_lse,
-                                         args.batch_stride_o,
-                                         args.window_size_left,
-                                         args.window_size_right,
-                                         args.sink_size,
-                                         args.mask_type,
-                                         args.p_drop,
-                                         args.s_randval,
-                                         args.drop_seed_offset,
-                                         args.sink_ptr);
+            return SageAttnKernel::MakeKargs(args.q_ptr,
+                                             args.k_ptr,
+                                             args.v_ptr,
+                                             args.bias_ptr,
+                                             args.q_descale_ptr,
+                                             args.k_descale_ptr,
+                                             args.v_descale_ptr,
+                                             args.rand_val_ptr,
+                                             args.lse_ptr,
+                                             args.o_ptr,
+                                             args.seqlen_q,
+                                             args.hdim_q,
+                                             args.hdim_v,
+                                             args.nhead_q,
+                                             args.nhead_q / args.nhead_k,
+                                             args.num_total_pages,
+                                             args.page_block_size,
+                                             page_table,
+                                             args.scale_s,
+                                             args.scale_p,
+                                             args.scale_o,
+                                             args.stride_q,
+                                             args.stride_k,
+                                             args.stride_v,
+                                             args.stride_bias,
+                                             args.stride_randval,
+                                             args.stride_o,
+                                             args.nhead_stride_q,
+                                             args.nhead_stride_k,
+                                             args.nhead_stride_v,
+                                             args.nhead_stride_bias,
+                                             args.nhead_stride_randval,
+                                             args.nhead_stride_lse,
+                                             args.nhead_stride_o,
+                                             args.batch_stride_q,
+                                             args.batch_stride_k,
+                                             args.batch_stride_v,
+                                             args.batch_stride_bias,
+                                             args.batch_stride_randval,
+                                             args.batch_stride_lse,
+                                             args.batch_stride_o,
+                                             args.window_size_left,
+                                             args.window_size_right,
+                                             args.sink_size,
+                                             args.mask_type,
+                                             args.p_drop,
+                                             args.s_randval,
+                                             args.drop_seed_offset,
+                                             args.sink_ptr);
         }
     }();
 
-    dim3 grids = FmhaKernel::GridSize(args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v);
+    dim3 grids = SageAttnKernel::GridSize(args.batch, args.nhead_q, args.max_seqlen_q, args.hdim_v);
     return ck_tile::make_tuple(kargs, grids);
 }
 
@@ -1272,8 +1255,7 @@ template <ck_tile::index_t HDim_,
           ck_tile::index_t kK1_,
           ck_tile::index_t kK0BlockLength_,
           bool kIsVLayoutRowMajor_,
-          ck_tile::BlockFmhaPipelineEnum FmhaPipelineEnum_,
-          bool kHasLogitsSoftCap_,
+          ck_tile::BlockSageAttnPipelineEnum FmhaPipelineEnum_,
           typename FmhaMask_,
           ck_tile::BlockAttentionBiasEnum BiasEnum_,
           bool kStoreLse_,
@@ -1299,7 +1281,7 @@ struct fmha_fwd_traits_
     static constexpr ck_tile::index_t kK0BlockLength = kK0BlockLength_;
     static constexpr bool kIsVLayoutRowMajor         = kIsVLayoutRowMajor_;
     static constexpr auto FmhaPipelineEnum           = FmhaPipelineEnum_;
-    static constexpr bool kHasLogitsSoftCap          = kHasLogitsSoftCap_;
+    static constexpr bool kHasLogitsSoftCap          = false; // always disabled for sageattention
     using FmhaMask                                   = ck_tile::remove_cvref_t<FmhaMask_>;
     static constexpr auto BiasEnum                   = BiasEnum_;
     static constexpr bool kStoreLse                  = kStoreLse_;
@@ -1324,8 +1306,7 @@ template <ck_tile::index_t HDim_,
           ck_tile::index_t kK1_,
           ck_tile::index_t kK0BlockLength_,
           bool kIsVLayoutRowMajor_,
-          ck_tile::BlockFmhaPipelineEnum FmhaPipelineEnum_,
-          bool kHasLogitsSoftCap_,
+          ck_tile::BlockSageAttnPipelineEnum FmhaPipelineEnum_,
           typename FmhaMask_,
           ck_tile::BlockAttentionBiasEnum BiasEnum_,
           bool kStoreLse_,
@@ -1353,7 +1334,6 @@ struct fmha_fwd_batch_prefill_traits_ : public fmha_fwd_traits_<HDim_,
                                                                 kK0BlockLength_,
                                                                 kIsVLayoutRowMajor_,
                                                                 FmhaPipelineEnum_,
-                                                                kHasLogitsSoftCap_,
                                                                 FmhaMask_,
                                                                 BiasEnum_,
                                                                 kStoreLse_,
@@ -1386,8 +1366,7 @@ template <ck_tile::index_t HDim_,
           ck_tile::index_t kK1_,
           ck_tile::index_t kK0BlockLength_,
           bool kIsVLayoutRowMajor_,
-          ck_tile::BlockFmhaPipelineEnum FmhaPipelineEnum_,
-          bool kHasLogitsSoftCap_,
+          ck_tile::BlockSageAttnPipelineEnum FmhaPipelineEnum_,
           typename FmhaMask_,
           ck_tile::BlockAttentionBiasEnum BiasEnum_,
           bool kStoreLse_,
@@ -1412,7 +1391,7 @@ struct fmha_fwd_pagedkv_traits_
     static constexpr ck_tile::index_t kK0BlockLength = kK0BlockLength_;
     static constexpr bool kIsVLayoutRowMajor         = kIsVLayoutRowMajor_;
     static constexpr auto FmhaPipelineEnum           = FmhaPipelineEnum_;
-    static constexpr bool kHasLogitsSoftCap          = kHasLogitsSoftCap_;
+    static constexpr bool kHasLogitsSoftCap          = false; // always disabled for sageattention
     using FmhaMask                                   = ck_tile::remove_cvref_t<FmhaMask_>;
     static constexpr auto BiasEnum                   = BiasEnum_;
     static constexpr bool kStoreLse                  = kStoreLse_;
@@ -1439,8 +1418,7 @@ template <ck_tile::index_t HDim_,
           ck_tile::index_t kK1_,
           ck_tile::index_t kK0BlockLength_,
           bool kIsVLayoutRowMajor_,
-          ck_tile::BlockFmhaPipelineEnum FmhaPipelineEnum_,
-          bool kHasLogitsSoftCap_,
+          ck_tile::BlockSageAttnPipelineEnum FmhaPipelineEnum_,
           typename FmhaMask_,
           ck_tile::BlockAttentionBiasEnum BiasEnum_,
           bool kStoreLse_,
@@ -1464,7 +1442,7 @@ struct fmha_fwd_splitkv_traits_
     static constexpr ck_tile::index_t kK0BlockLength = kK0BlockLength_;
     static constexpr bool kIsVLayoutRowMajor         = kIsVLayoutRowMajor_;
     static constexpr auto FmhaPipelineEnum           = FmhaPipelineEnum_;
-    static constexpr bool kHasLogitsSoftCap          = kHasLogitsSoftCap_;
+    static constexpr bool kHasLogitsSoftCap          = false; // always disabled for sageattention
     using FmhaMask                                   = ck_tile::remove_cvref_t<FmhaMask_>;
     static constexpr auto BiasEnum                   = BiasEnum_;
     static constexpr bool kStoreLse                  = kStoreLse_;
@@ -1554,7 +1532,6 @@ struct fmha_fwd_traits
     std::string data_type;
     bool is_group_mode;
     bool is_v_rowmajor;
-    bool has_logits_soft_cap;
     mask_enum mask_type;
     bias_enum bias_type; // 0:no bias, 1:elementwise bias, 2:alibi. sync with BlockAttentionBiasEnum
     bool has_lse;
@@ -1573,7 +1550,6 @@ struct fmha_fwd_pagedkv_traits
     std::string data_type;
     bool is_group_mode;
     bool is_v_rowmajor;
-    bool has_logits_soft_cap;
     mask_enum mask_type;
     bias_enum bias_type; // 0:no bias, 1:elementwise bias, 2:alibi. sync with BlockAttentionBiasEnum
     bool has_lse             = false;
@@ -1595,7 +1571,6 @@ struct fmha_fwd_splitkv_traits
     std::string data_type;
     bool is_group_mode;
     bool is_v_rowmajor;
-    bool has_logits_soft_cap;
     mask_enum mask_type;
     bias_enum bias_type; // 0:no bias, 1:elementwise bias, 2:alibi. sync with BlockAttentionBiasEnum
     bool has_lse;

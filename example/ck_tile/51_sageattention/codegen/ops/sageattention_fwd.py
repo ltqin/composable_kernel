@@ -68,18 +68,17 @@ using fmha_dtype = {F_dtype};
 
 using fmha_block_tile = ck_tile::sequence<{F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}>;
 
-using fmha_shape = ck_tile::TileFmhaShape<fmha_block_tile,
+using fmha_shape = ck_tile::TileSageAttnShape<fmha_block_tile,
                                           ck_tile::sequence<{F_rm0}, {F_rn0}, {F_rk0}>,
                                           ck_tile::sequence<{F_wm0}, {F_wn0}, {F_wk0}>,
                                           ck_tile::sequence<{F_rm1}, {F_rn1}, {F_rk1}>,
                                           ck_tile::sequence<{F_wm1}, {F_wn1}, {F_wk1}>,
                                           {F_vlayout}>;
 
-using fmha_traits = ck_tile::TileFmhaTraits<{F_spad},
+using fmha_traits = ck_tile::TileSageAttnTraits<{F_spad},
                                             {F_skpad},
                                             {F_dpad},
                                             {F_dvpad},
-                                            false,
                                             {F_bias},
                                             false,
                                             {F_lse},
@@ -93,7 +92,7 @@ using fmha_variant = ck_tile::ComposedAttention<false * ck_tile::LOGITS_SOFT_CAP
 
 using fmha_mask = {F_mask};
 
-using fmha_pipeline_problem = ck_tile::BlockFmhaPipelineProblem<
+using fmha_pipeline_problem = ck_tile::BlockSageAttnPipelineProblem<
     typename SageAttentionFwdTypeConfig<fmha_dtype>::QDataType,
     typename SageAttentionFwdTypeConfig<fmha_dtype>::KDataType,
     typename SageAttentionFwdTypeConfig<fmha_dtype>::VDataType,
@@ -124,7 +123,7 @@ using fmha_kernel = {F_kernel}<fmha_pipeline, fmha_epilogue>;
 
 
 using trait = fmha_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode},{F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout},
-                        {F_pipeline_enum}, false, fmha_mask, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}, {F_sink}>;
+                        {F_pipeline_enum}, fmha_mask, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}, {F_sink}>;
 
 template<>
 float fmha_fwd_<trait, {F_arch.tag}>(const ck_tile::stream_config& s, fmha_fwd_args a)
@@ -239,9 +238,9 @@ FMHA_FWD_API_PER_HDIM_CASE = """{F_if}(t.hdim_q <= {F_hdim} && t.hdim_v <= {F_hd
 }}
 """
 
-FMHA_FWD_API_INNER_DISPATCH = """{F_if}((t.is_group_mode == {F_mode}) && (t.is_v_rowmajor == {F_vlayout}) && (t.has_logits_soft_cap == false) && ({F_mask_check}) && (t.bias_type == {F_bias_check}) && (t.has_lse == {F_lse})  && (t.has_dropout == {F_dropout}) && (t.qscale_type == {F_qscale_check}) && (t.skip_min_seqlen_q == {F_skip}) &&(t.has_sink == {F_sink}) &&
+FMHA_FWD_API_INNER_DISPATCH = """{F_if}((t.is_group_mode == {F_mode}) && (t.is_v_rowmajor == {F_vlayout}) && ({F_mask_check}) && (t.bias_type == {F_bias_check}) && (t.has_lse == {F_lse})  && (t.has_dropout == {F_dropout}) && (t.qscale_type == {F_qscale_check}) && (t.skip_min_seqlen_q == {F_skip}) &&(t.has_sink == {F_sink}) &&
         ({F_scheck}) && ({F_seqtune}) && ({F_skcheck}) && ({F_dcheck}) && ({F_dvcheck}) && ({F_constraint})) {{
-    using trait_ = fmha_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode}, {F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout}, {F_pipeline_enum}, false, {F_mask}, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}, {F_sink}>;
+    using trait_ = fmha_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode}, {F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout}, {F_pipeline_enum}, {F_mask}, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}, {F_sink}>;
     return fmha_fwd_<trait_, {F_arch.tag}>(s, a);
 }}
 """
@@ -640,16 +639,16 @@ class FmhaFwdKernel:
     @classmethod
     def _get_cpp_kernel_class_name(cls, pipeline_tag):
         if pipeline_tag == "qr_async_trload_v3":
-            return "ck_tile::FmhaFwdV3Kernel"
+            return "ck_tile::SageAttnFwdV3Kernel"
         else:
-            return "ck_tile::FmhaFwdKernel"
+            return "ck_tile::SageAttnFwdKernel"
 
     @classmethod
     def _get_cpp_kargs_creator_func_name(cls, pipeline_tag):
         if pipeline_tag == "qr_async_trload_v3":
-            return "fmha_fwd_v3_create_kargs_and_grids"
+            return "sageattn_fwd_v3_create_kargs_and_grids"
         else:
-            return "fmha_fwd_create_kargs_and_grids"
+            return "sageattn_fwd_create_kargs_and_grids"
 
     def render(self) -> str:
         return type(self)._KERNEL_HEADER + type(self)._KERNEL_BODY_TEMPLATE.format(

@@ -907,12 +907,11 @@ fwd_result sageattention_fwd_run(mode_enum mode,
         }
         else // fmha_fwd_traits or fmha_splitkv_traits
         {
-            traits.is_group_mode       = (mode == mode_enum::group);
-            traits.has_logits_soft_cap = false; // logits_soft_cap always disabled
-            traits.mask_type           = mask.type;
-            traits.bias_type           = bias.type;
-            traits.has_sink            = mask.sink > 0 ? true : false;
-            traits.has_lse             = lse;
+            traits.is_group_mode = (mode == mode_enum::group);
+            traits.mask_type     = mask.type;
+            traits.bias_type     = bias.type;
+            traits.has_sink      = mask.sink > 0 ? true : false;
+            traits.has_lse       = lse;
 
             if constexpr(std::is_same_v<fmha_fwd_traits, std::decay_t<decltype(traits)>>)
             {
@@ -1063,8 +1062,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
             args.max_seqlen_q = max_seqlen_q;
 
             args.scale_s = scale_s;
-
-            args.logits_soft_cap = 0.f; // logits_soft_cap always disabled
 
             args.stride_bias =
                 (bias.type == bias_enum::alibi ? (bias.rank_info == 0 ? 0 : nhead) : stride_bias);
@@ -1596,8 +1593,6 @@ fwd_result sageattention_fwd_run(mode_enum mode,
                     ck_tile::identity{},
                     ck_tile::identity{},
                     ck_tile::scales(scale_s_host));
-
-            // logits_soft_cap is always disabled, skip this block
 
             if(bias.type == bias_enum::elementwise_bias)
             {

@@ -15,7 +15,6 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           bool kPadSeqLenK_ /* padding for seqlen_k */,
           bool kPadHeadDimQ_ /* paddding for hdim_q */,
           bool kPadHeadDimV_ /* paddding for hdim_v */,
-          bool kHasLogitsSoftCap_,
           BlockAttentionBiasEnum BiasEnum_,
           bool kHasBiasGrad_,
           bool kStoreLSE_,
@@ -24,13 +23,13 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           index_t kBlockPerCu_  = -1,    /* overwrite occupancy if not -1 */
           bool kSkipMinSeqlenQ_ = false, /* skip min seqlen q while chunked prefill */
           bool kHasSink_        = false>
-struct TileFmhaTraits
+struct TileSageAttnTraits
 {
     static constexpr bool kPadSeqLenQ       = kPadSeqLenQ_;
     static constexpr bool kPadSeqLenK       = kPadSeqLenK_;
     static constexpr bool kPadHeadDimQ      = kPadHeadDimQ_;
     static constexpr bool kPadHeadDimV      = kPadHeadDimV_;
-    static constexpr bool kHasLogitsSoftCap = kHasLogitsSoftCap_;
+    static constexpr bool kHasLogitsSoftCap = false; // always disabled for sageattention
     static constexpr auto BiasEnum          = BiasEnum_;
     static constexpr bool kHasBiasGrad      = kHasBiasGrad_;
     static constexpr bool kStoreLSE         = kStoreLSE_;
@@ -45,7 +44,6 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           bool kPadSeqLenK_ /* padding for seqlen_k */,
           bool kPadHeadDimQ_ /* padding for hdim_q */,
           bool kPadHeadDimV_ /* padding for hdim_v */,
-          bool kHasLogitsSoftCap_,
           BlockAttentionBiasEnum BiasEnum_,
           bool kHasBiasGrad_,
           bool kStoreLSE_,
@@ -58,19 +56,18 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
               BlockAttentionKVCacheMemoryLayoutEnum::VECTORIZED_LAYOUT,
           BlockAttentionKVCacheLookupTableEnum kKVLookupTable_ =
               BlockAttentionKVCacheLookupTableEnum::SGLANG_PAGE_TABLE_1D>
-struct TileFmhaBatchPrefillTraits : public TileFmhaTraits<kPadSeqLenQ_,
-                                                          kPadSeqLenK_,
-                                                          kPadHeadDimQ_,
-                                                          kPadHeadDimV_,
-                                                          kHasLogitsSoftCap_,
-                                                          BiasEnum_,
-                                                          kHasBiasGrad_,
-                                                          kStoreLSE_,
-                                                          kHasDropout_,
-                                                          QScaleEnum_,
-                                                          kBlockPerCu_,
-                                                          kSkipMinSeqlenQ_,
-                                                          false>
+struct TileSageAttnBatchPrefillTraits : public TileSageAttnTraits<kPadSeqLenQ_,
+                                                                  kPadSeqLenK_,
+                                                                  kPadHeadDimQ_,
+                                                                  kPadHeadDimV_,
+                                                                  BiasEnum_,
+                                                                  kHasBiasGrad_,
+                                                                  kStoreLSE_,
+                                                                  kHasDropout_,
+                                                                  QScaleEnum_,
+                                                                  kBlockPerCu_,
+                                                                  kSkipMinSeqlenQ_,
+                                                                  false>
 {
     static constexpr auto kKVMemoryLayout   = kKVMemoryLayout_;
     static constexpr auto kKVLookupTable    = kKVLookupTable_;
@@ -88,7 +85,7 @@ template <index_t kPadHeadDimQ_ /* paddding for hdim_q */,
           BlockAttentionBiasEnum BiasEnum_,
           bool kHasBiasGrad_,
           index_t kBlockPerCu_ = -1 /* overwrite occupancy if not -1 */>
-struct TileFmhaBwdTraits
+struct TileSageAttnBwdTraits
 {
     static constexpr index_t kPadHeadDimQ = kPadHeadDimQ_;
     static constexpr index_t kPadHeadDimV = kPadHeadDimV_;
@@ -104,7 +101,6 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           bool kPadSeqLenK_ /* padding for seqlen_k */,
           bool kPadHeadDimQ_ /* paddding for hdim_q */,
           bool kPadHeadDimV_ /* paddding for hdim_v */,
-          bool kHasLogitsSoftCap_,
           BlockAttentionBiasEnum BiasEnum_,
           bool kHasBiasGrad_,
           bool kStoreLSE_, /* set to true if either num_splits > 1 or fwd training is running */
@@ -113,13 +109,13 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           index_t kBlockPerCu_  = -1,    /* overwrite occupancy if not -1 */
           bool kSkipMinSeqlenQ_ = false, /* skip min seqlen q while chunked prefill */
           bool kHasSink_        = false>
-struct TileFmhaFwdPagedKVTraits
+struct TileSageAttnFwdPagedKVTraits
 {
     static constexpr bool kPadSeqLenQ       = kPadSeqLenQ_;
     static constexpr bool kPadSeqLenK       = kPadSeqLenK_;
     static constexpr bool kPadHeadDimQ      = kPadHeadDimQ_;
     static constexpr bool kPadHeadDimV      = kPadHeadDimV_;
-    static constexpr bool kHasLogitsSoftCap = kHasLogitsSoftCap_;
+    static constexpr bool kHasLogitsSoftCap = false; // always disabled for sageattention
     static constexpr auto BiasEnum          = BiasEnum_;
     static constexpr bool kHasBiasGrad      = kHasBiasGrad_;
     static constexpr bool kStoreLSE         = kStoreLSE_;
@@ -134,7 +130,6 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           bool kPadSeqLenK_ /* padding for seqlen_k */,
           bool kPadHeadDimQ_ /* paddding for hdim_q */,
           bool kPadHeadDimV_ /* paddding for hdim_v */,
-          bool kHasLogitsSoftCap_,
           BlockAttentionBiasEnum BiasEnum_,
           bool kHasBiasGrad_,
           bool kStoreLSE_, /* set to true if either num_splits > 1 or fwd training is running */
@@ -144,13 +139,13 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           bool kMergeNumHeadGroupsSeqLenQ_ = false,
           index_t kBlockPerCu_             = -1, /* overwrite occupancy if not -1 */
           bool kHasSink_                   = false>
-struct TileFmhaFwdSplitKVTraits
+struct TileSageAttnFwdSplitKVTraits
 {
     static constexpr bool kPadSeqLenQ       = kPadSeqLenQ_;
     static constexpr bool kPadSeqLenK       = kPadSeqLenK_;
     static constexpr bool kPadHeadDimQ      = kPadHeadDimQ_;
     static constexpr bool kPadHeadDimV      = kPadHeadDimV_;
-    static constexpr bool kHasLogitsSoftCap = kHasLogitsSoftCap_;
+    static constexpr bool kHasLogitsSoftCap = false; // always disabled for sageattention
     static constexpr auto BiasEnum          = BiasEnum_;
     static constexpr bool kHasBiasGrad      = kHasBiasGrad_;
     static constexpr bool kStoreLSE         = kStoreLSE_;
@@ -169,7 +164,7 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           bool kDoFp8StaticQuant_,
           index_t kLogMaxSplits_,
           index_t kBlockPerCu_ = -1 /* overwrite occupancy if not -1 */>
-struct TileFmhaFwdSplitKVCombineTraits
+struct TileSageAttnFwdSplitKVCombineTraits
 {
     static constexpr bool kPadSeqLenQ       = kPadSeqLenQ_;
     static constexpr bool kPadHeadDimV      = kPadHeadDimV_;
@@ -208,7 +203,7 @@ struct TileFmhaBwdOGradDotOTraits
 template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           bool kPadHeadDimQ_ /* paddding for hdim_q */,
           index_t kBlockPerCu_ = 2 /* hint to occupancy */>
-struct TileFmhaBwdConvertQGradTraits
+struct TileSageAttnBwdConvertQGradTraits
 {
     static constexpr bool kPadSeqLenQ    = kPadSeqLenQ_;
     static constexpr bool kPadHeadDimQ   = kPadHeadDimQ_;

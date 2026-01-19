@@ -58,16 +58,11 @@ struct BlockSageAttentionPipelineQRKSVSAsync
     static constexpr bool kPadSeqLenK       = Problem::kPadSeqLenK;
     static constexpr bool kPadHeadDimQ      = true; // support multiple of vector(like 8x)
     static constexpr bool kPadHeadDimV      = true; // support multiple of vector(like 8x)
-    static constexpr bool kHasLogitsSoftCap = Problem::kHasLogitsSoftCap;
     static constexpr auto BiasEnum          = Problem::BiasEnum;
     static constexpr bool kStoreLSE         = Problem::kStoreLSE;
     static constexpr bool kHasDropout       = Problem::kHasDropout;
     static constexpr bool kHasSink          = Problem::kHasSink;
-
-    static_assert((CK_TILE_FMHA_FWD_FAST_EXP2 &&
-                   (kHasLogitsSoftCap && Problem::BiasEnum == BlockAttentionBiasEnum::NO_BIAS ||
-                    !kHasLogitsSoftCap)) ||
-                  (!CK_TILE_FMHA_FWD_FAST_EXP2 && !kHasLogitsSoftCap));
+    static constexpr bool kHasLogitsSoftCap = false; // always disabled for sageattention
 
     // last dimension vector length used to create tensor view(and decide buffer_load vector length)
     // ... together with tensor distribution. tensor dist should able to overwrite this
@@ -489,27 +484,10 @@ struct BlockSageAttentionPipelineQRKSVSAsync
             else
             {
                 s_acc = tile_elementwise_in(s_acc_element_func, s_acc);
-                if constexpr(kHasLogitsSoftCap)
-                {
-                    auto apply_logits_transform =
-                        [&variant, &variant_params, &block_indices](auto& x) {
-                            x = variant.LogitsTransform(variant_params,
-                                                        variant.QueryTransform(variant_params, x),
-                                                        block_indices.batch_idx,
-                                                        block_indices.qo_head_idx,
-                                                        block_indices.kv_head_idx);
-                        };
-                    for(index_t i = 0; i < s_acc.thread_buf_.size(); ++i)
-                    {
-                        apply_logits_transform(s_acc.thread_buf_[i]);
-                    }
-                }
-                else
-                {
+                // logits_soft_cap is always disabled
 #if !CK_TILE_FMHA_FWD_FAST_EXP2
-                    tile_elementwise_inout([&scale_s](auto& x) { x = x * scale_s; }, s_acc);
+                tile_elementwise_inout([&scale_s](auto& x) { x = x * scale_s; }, s_acc);
 #endif
-                }
             }
             if constexpr(kHasSink)
             {
@@ -642,14 +620,8 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                     }
                     else
                     {
-                        if constexpr(kHasLogitsSoftCap)
-                        {
-                            p_compute(i_j_idx) = exp2(s[i_j_idx] - get_validated_m(m[i_idx]));
-                        }
-                        else
-                        {
-                            p_compute(i_j_idx) = exp2(scale_s * s[i_j_idx] - row_max);
-                        }
+                        // logits_soft_cap is always disabled
+                        p_compute(i_j_idx) = exp2(scale_s * s[i_j_idx] - row_max);
                     }
 #else
                     p_compute(i_j_idx)     = exp(s[i_j_idx] - get_validated_m(m[i_idx]));
@@ -674,15 +646,9 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                     }
                     else
                     {
-                        if constexpr(kHasLogitsSoftCap)
-                        {
-                            return exp2(m_old[i_idx] - get_validated_m(m[i_idx]));
-                        }
-                        else
-                        {
-                            auto row_max = scale_s * get_validated_m(m[i_idx]);
-                            return exp2(scale_s * m_old[i_idx] - row_max);
-                        }
+                        // logits_soft_cap is always disabled
+                        auto row_max = scale_s * get_validated_m(m[i_idx]);
+                        return exp2(scale_s * m_old[i_idx] - row_max);
                     }
                 }();
 #else
@@ -833,14 +799,8 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                 }
                 else
                 {
-                    if constexpr(kHasLogitsSoftCap)
-                    {
-                        lse(i_idx) = m_[i_idx] * R_LOG2E + log(l_[i_idx]);
-                    }
-                    else
-                    {
-                        lse(i_idx) = m_[i_idx] * scale_s * R_LOG2E + log(l_[i_idx]);
-                    }
+                    // logits_soft_cap is always disabled
+                    lse(i_idx) = m_[i_idx] * scale_s * R_LOG2E + log(l_[i_idx]);
                 }
 #else
                 lse(i_idx) = m_[i_idx] + log(l_[i_idx]);

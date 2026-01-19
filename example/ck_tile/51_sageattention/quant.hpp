@@ -6,7 +6,7 @@
 #include <ostream>
 #include <string>
 #include "ck_tile/core.hpp"
-#include "ck_tile/ops/fmha.hpp"
+#include "ck_tile/ops/fmha/block/block_attention_quant_scale_enum.hpp"
 
 // keep sync with BlockAttentionQuantScaleEnum
 enum class quant_scale_enum

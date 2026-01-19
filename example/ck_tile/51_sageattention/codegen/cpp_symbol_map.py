@@ -138,13 +138,13 @@ PIPELINE_MAP = {
 }
 
 PIPELINE_ENUM_MAP = {
-    "qr": "ck_tile::BlockFmhaPipelineEnum::QRKSVS",
-    "qr_async": "ck_tile::BlockFmhaPipelineEnum::QRKSVS_ASYNC",
-    "qr_nwarp_sshuffle": "ck_tile::BlockFmhaPipelineEnum::QRKSVS",
-    "qs": "ck_tile::BlockFmhaPipelineEnum::QSKSVS",
-    "qr_pagedkv": "ck_tile::BlockFmhaPipelineEnum::QRKSVS",
-    "qr_async_trload": "ck_tile::BlockFmhaPipelineEnum::QRKSVS_ASYNC_TRLOAD",
-    "qr_async_trload_v3": "ck_tile::BlockFmhaPipelineEnum::QRKSVS_ASYNC_TRLOAD_V3",
+    "qr": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS",
+    "qr_async": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS_ASYNC",
+    "qr_nwarp_sshuffle": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS",
+    "qs": "ck_tile::BlockSageAttnPipelineEnum::QSKSVS",
+    "qr_pagedkv": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS",
+    "qr_async_trload": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS_ASYNC_TRLOAD",
+    "qr_async_trload_v3": "ck_tile::BlockSageAttnPipelineEnum::QRKSVS_ASYNC_TRLOAD_V3",
 }
 
 BOOL_MAP = {

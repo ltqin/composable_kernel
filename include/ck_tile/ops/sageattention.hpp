@@ -3,6 +3,7 @@
 #pragma once
 
 #include "ck_tile/ops/sageattention/kernel/sageattention_fwd_kernel.hpp"
+#include "ck_tile/ops/sageattention/pipeline/block_sageattention_pipeline_enum.hpp"
 #include "ck_tile/ops/sageattention/pipeline/block_sageattention_pipeline_problem.hpp"
 #include "ck_tile/ops/sageattention/pipeline/block_sageattention_pipeline_qr_ks_vs_async.hpp"
 #include "ck_tile/ops/sageattention/pipeline/block_sageattention_pipeline_qr_ks_vs_async_default_policy.hpp"

@@ -6,7 +6,7 @@
 #include <ostream>
 #include <string>
 #include "ck_tile/core.hpp"
-#include "ck_tile/ops/fmha.hpp"
+#include "ck_tile/ops/fmha/block/block_attention_bias_enum.hpp"
 
 // keep sync with BlockAttentionBiasEnum
 enum class bias_enum

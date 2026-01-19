@@ -26,7 +26,7 @@ template <typename QDataType_,
           typename FmhaMask_,
           bool kUseTrLoad_,
           typename Traits_>
-struct BlockFmhaPipelineProblem
+struct BlockSageAttnPipelineProblem
 {
     using QDataType             = remove_cvref_t<QDataType_>;
     using KDataType             = remove_cvref_t<KDataType_>;
@@ -56,7 +56,6 @@ struct BlockFmhaPipelineProblem
     static constexpr bool kPadSeqLenK       = Traits::kPadSeqLenK;
     static constexpr bool kPadHeadDimQ      = Traits::kPadHeadDimQ;
     static constexpr bool kPadHeadDimV      = Traits::kPadHeadDimV;
-    static constexpr bool kHasLogitsSoftCap = Traits::kHasLogitsSoftCap;
     static constexpr bool kSkipMinSeqlenQ   = Traits::kSkipMinSeqlenQ;
     static constexpr auto BiasEnum          = Traits::BiasEnum;
     static constexpr bool kStoreLSE         = Traits::kStoreLSE;
@@ -64,6 +63,7 @@ struct BlockFmhaPipelineProblem
     static constexpr auto QScaleEnum        = Traits::QScaleEnum;
     static constexpr index_t kBlockPerCu    = Traits::kBlockPerCu;
     static constexpr bool kHasSink          = Traits::kHasSink;
+    static constexpr bool kHasLogitsSoftCap = Traits::kHasLogitsSoftCap;
 };
 
 template <typename QDataType_,
@@ -84,24 +84,24 @@ template <typename QDataType_,
           bool kUseTrLoad_,
           int kPageBlockSize_,
           typename Traits_>
-struct BlockFmhaBatchPrefillPipelineProblem
-    : public BlockFmhaPipelineProblem<QDataType_,
-                                      KDataType_,
-                                      VDataType_,
-                                      SaccDataType_,
-                                      SMPLComputeDataType_,
-                                      BiasDataType_,
-                                      RandValOutputDataType_,
-                                      LSEDataType_,
-                                      PDataType_,
-                                      OaccDataType_,
-                                      ODataType_,
-                                      BlockFmhaShape_,
-                                      kIsGroupMode_,
-                                      AttentionVariant_,
-                                      FmhaMask_,
-                                      kUseTrLoad_,
-                                      Traits_>
+struct BlockSageAttnBatchPrefillPipelineProblem
+    : public BlockSageAttnPipelineProblem<QDataType_,
+                                          KDataType_,
+                                          VDataType_,
+                                          SaccDataType_,
+                                          SMPLComputeDataType_,
+                                          BiasDataType_,
+                                          RandValOutputDataType_,
+                                          LSEDataType_,
+                                          PDataType_,
+                                          OaccDataType_,
+                                          ODataType_,
+                                          BlockFmhaShape_,
+                                          kIsGroupMode_,
+                                          AttentionVariant_,
+                                          FmhaMask_,
+                                          kUseTrLoad_,
+                                          Traits_>
 {
     static constexpr index_t kPageBlockSize = kPageBlockSize_;
     static_assert(kPageBlockSize > 0, "kPageBlockSize must be positive");
@@ -138,7 +138,7 @@ template <typename QDataType_,
           typename AttentionVariant_,
           typename FmhaMask_,
           typename Traits_>
-struct BlockFmhaFwdPagedKVPipelineProblem
+struct BlockSageAttnFwdPagedKVPipelineProblem
 {
     using QDataType           = remove_cvref_t<QDataType_>;
     using KDataType           = remove_cvref_t<KDataType_>;
@@ -166,7 +166,6 @@ struct BlockFmhaFwdPagedKVPipelineProblem
     static constexpr bool kPadSeqLenK       = Traits::kPadSeqLenK;
     static constexpr bool kPadHeadDimQ      = Traits::kPadHeadDimQ;
     static constexpr bool kPadHeadDimV      = Traits::kPadHeadDimV;
-    static constexpr bool kHasLogitsSoftCap = Traits::kHasLogitsSoftCap;
     static constexpr bool kSkipMinSeqlenQ   = Traits::kSkipMinSeqlenQ;
     static constexpr auto BiasEnum          = Traits::BiasEnum;
     static constexpr bool kStoreLSE         = Traits::kStoreLSE;
@@ -174,6 +173,7 @@ struct BlockFmhaFwdPagedKVPipelineProblem
     static constexpr bool kIsPagedKV        = Traits::kIsPagedKV;
     static constexpr index_t kBlockPerCu    = Traits::kBlockPerCu;
     static constexpr bool kHasSink          = Traits::kHasSink;
+    static constexpr bool kHasLogitsSoftCap = false; // always disabled for sageattention
 };
 
 template <typename QDataType_,
@@ -191,7 +191,7 @@ template <typename QDataType_,
           typename AttentionVariant_,
           typename FmhaMask_,
           typename Traits_>
-struct BlockFmhaFwdSplitKVPipelineProblem
+struct BlockSageAttnFwdSplitKVPipelineProblem
 {
     using QDataType           = remove_cvref_t<QDataType_>;
     using KDataType           = remove_cvref_t<KDataType_>;
@@ -219,7 +219,6 @@ struct BlockFmhaFwdSplitKVPipelineProblem
     static constexpr bool kPadSeqLenK                = Traits::kPadSeqLenK;
     static constexpr bool kPadHeadDimQ               = Traits::kPadHeadDimQ;
     static constexpr bool kPadHeadDimV               = Traits::kPadHeadDimV;
-    static constexpr bool kHasLogitsSoftCap          = Traits::kHasLogitsSoftCap;
     static constexpr auto BiasEnum                   = Traits::BiasEnum;
     static constexpr bool kStoreLSE                  = Traits::kStoreLSE;
     static constexpr bool kDoFp8StaticQuant          = Traits::kDoFp8StaticQuant;
@@ -228,11 +227,12 @@ struct BlockFmhaFwdSplitKVPipelineProblem
     static constexpr bool kMergeNumHeadGroupsSeqLenQ = Traits::kMergeNumHeadGroupsSeqLenQ;
     static constexpr index_t kBlockPerCu             = Traits::kBlockPerCu;
     static constexpr bool kHasSink                   = Traits::kHasSink;
+    static constexpr bool kHasLogitsSoftCap          = false; // always disabled for sageattention
 };
 
 // extract tile size attributes to remove dependency on traits
 template <typename OaccDataType_, ck_tile::index_t kN1_>
-struct BlockFmhaSplitKVCombinePipelineTileSizes
+struct BlockSageAttnSplitKVCombinePipelineTileSizes
 {
     static constexpr index_t MaxVectorSize = 16 / sizeof(OaccDataType_);
 
@@ -248,10 +248,10 @@ template <typename LSEDataType_,
           bool kIsGroupMode_,
           ck_tile::index_t kN1_,
           typename Traits_>
-struct BlockFmhaSplitKVCombinePipelineProblem
-    : BlockFmhaSplitKVCombinePipelineTileSizes<OaccDataType_, kN1_>
+struct BlockSageAttnSplitKVCombinePipelineProblem
+    : BlockSageAttnSplitKVCombinePipelineTileSizes<OaccDataType_, kN1_>
 {
-    using BaseType = BlockFmhaSplitKVCombinePipelineTileSizes<OaccDataType_, kN1_>;
+    using BaseType = BlockSageAttnSplitKVCombinePipelineTileSizes<OaccDataType_, kN1_>;
 
     using LSEDataType  = remove_cvref_t<LSEDataType_>;
     using OaccDataType = remove_cvref_t<OaccDataType_>;
@@ -296,7 +296,7 @@ template <typename QDataType_,
           RotaryEmbeddingEnum RotaryEnum_,
           bool kIsPagedKV_,
           typename Traits_>
-struct BlockFmhaFwdAppendKVPipelineProblem
+struct BlockSageAttnFwdAppendKVPipelineProblem
 {
     using QDataType = remove_cvref_t<QDataType_>;
     using KDataType = remove_cvref_t<KDataType_>;

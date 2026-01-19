@@ -33,7 +33,7 @@ template <typename BlockTile_, // sequence<...
           typename Gemm1BlockWarps_,
           typename Gemm1WarpTile_,
           bool IsVLayoutRowMajor_>
-struct TileFmhaShape
+struct TileSageAttnShape
 {
     using BlockTile       = remove_cvref_t<BlockTile_>;
     using Gemm0BlockWarps = remove_cvref_t<Gemm0BlockWarps_>;
@@ -80,7 +80,7 @@ template <typename BlockTile_, // sequence<...
           typename Gemm4BlockWarps_,
           typename Gemm4WarpTile_,
           index_t kMaxSeqLenQ_ = 0>
-struct TileFmhaBwdShape
+struct TileSageAttnBwdShape
 {
     using BlockTile       = remove_cvref_t<BlockTile_>;
     using Gemm0BlockWarps = remove_cvref_t<Gemm0BlockWarps_>;
