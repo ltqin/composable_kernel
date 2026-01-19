@@ -84,9 +84,8 @@ using fmha_traits = ck_tile::TileSageAttnTraits<{F_spad},
                                             {F_lse},
                                             {F_dropout},
                                             {F_qscale},
-                                            {F_occupancy},
-                                            {F_skip},
-                                            {F_sink}>;
+                                        {F_occupancy},
+                                        {F_skip}>;
 
 using fmha_variant = ck_tile::ComposedAttention<false * ck_tile::LOGITS_SOFT_CAP, CK_TILE_FMHA_FWD_FAST_EXP2>;
 
@@ -123,7 +122,7 @@ using fmha_kernel = {F_kernel}<fmha_pipeline, fmha_epilogue>;
 
 
 using trait = sageattn_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode},{F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout},
-                        {F_pipeline_enum}, fmha_mask, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}, {F_sink}>;
+                        {F_pipeline_enum}, fmha_mask, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}>;
 
 template<>
 float sageattn_fwd_<trait, {F_arch.tag}>(const ck_tile::stream_config& s, sageattn_fwd_args a)
@@ -224,9 +223,9 @@ SAGEATTN_FWD_API_PER_HDIM_CASE = """{F_if}(t.hdim_q <= {F_hdim} && t.hdim_v <= {
 }}
 """
 
-SAGEATTN_FWD_API_INNER_DISPATCH = """{F_if}((t.is_group_mode == {F_mode}) && (t.is_v_rowmajor == {F_vlayout}) && ({F_mask_check}) && (t.bias_type == {F_bias_check}) && (t.has_lse == {F_lse})  && (t.has_dropout == {F_dropout}) && (t.qscale_type == {F_qscale_check}) && (t.skip_min_seqlen_q == {F_skip}) &&(t.has_sink == {F_sink}) &&
+SAGEATTN_FWD_API_INNER_DISPATCH = """{F_if}((t.is_group_mode == {F_mode}) && (t.is_v_rowmajor == {F_vlayout}) && ({F_mask_check}) && (t.bias_type == {F_bias_check}) && (t.has_lse == {F_lse})  && (t.has_dropout == {F_dropout}) && (t.qscale_type == {F_qscale_check}) && (t.skip_min_seqlen_q == {F_skip}) &&
         ({F_scheck}) && ({F_seqtune}) && ({F_skcheck}) && ({F_dcheck}) && ({F_dvcheck}) && ({F_constraint})) {{
-    using trait_ = sageattn_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode}, {F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout}, {F_pipeline_enum}, {F_mask}, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}, {F_sink}>;
+    using trait_ = sageattn_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode}, {F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout}, {F_pipeline_enum}, {F_mask}, {F_bias}, {F_lse}, {F_dropout}, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}>;
     return sageattn_fwd_<trait_, {F_arch.tag}>(s, a);
 }}
 """
@@ -272,14 +271,13 @@ class SageAttnFwdApiTrait:
     dvpad: str
     skip: str
     tr_load: str
-    sink: str
     constraint: CppConstraint
 
     @property
     def name(self) -> str:
         return (
             f"{self.hdim}-{self.dtype}-{self.mode}-{self.bm0}-{self.bn0}-{self.bk0}-{self.bn0}-{self.bk1}-{self.bk0max}-"
-            + f"{self.vlayout}-{self.mask}-{self.bias}-{self.lse}-{self.dropout}-{self.qscale}-{self.spad}-{self.skpad}-{self.dpad}-{self.dvpad}-{self.skip}-{self.sink}"
+            + f"{self.vlayout}-{self.mask}-{self.bias}-{self.lse}-{self.dropout}-{self.qscale}-{self.spad}-{self.skpad}-{self.dpad}-{self.dvpad}-{self.skip}"
         )
 
     @property
@@ -373,7 +371,6 @@ class SageAttnFwdPipeline:
     F_mask: str  # value from MASK_MAP
     F_skip: str  # true/false
     F_trload: str  # true/false
-    F_sink: str  # true/false
     F_constraint: CppConstraint = field(default_factory=lambda: CppConstraint())
 
     @property
@@ -441,10 +438,6 @@ class SageAttnFwdPipeline:
             n += "_trload"
         else:
             n += "_ntrload"
-        if self.F_sink == "t":
-            n += "_sink"
-        else:
-            n += "_nsink"
 
         return n
 
@@ -535,7 +528,6 @@ class SageAttnFwdApiPool:
                             F_trload=BOOL_MAP[trait.tr_load],
                             F_qscale_check=QSCALE_CHECK_MAP[trait.qscale],
                             F_qscale=QSCALE_MAP[trait.qscale],
-                            F_sink=BOOL_MAP[trait.sink],
                             F_scheck=trait.scheck,
                             F_seqtune=trait.seqtune(max_bm0),
                             F_skcheck=trait.skcheck,
@@ -669,7 +661,6 @@ class SageAttnFwdKernel:
             F_pipeline=PIPELINE_MAP[self.F_pipeline.tag],
             F_kernel=self._get_cpp_kernel_class_name(self.F_pipeline.tag),
             F_kargs_creator=self._get_cpp_kargs_creator_func_name(self.F_pipeline.tag),
-            F_sink=BOOL_MAP[self.F_pipeline.F_sink],
         )
 
     @property
@@ -711,7 +702,6 @@ class SageAttnFwdKernel:
             dvpad=self.F_pipeline.F_dvpad,
             skip=self.F_pipeline.F_skip,
             tr_load=self.F_pipeline.F_trload,
-            sink=self.F_pipeline.F_sink,
             constraint=self.F_tile.F_constraint & self.F_pipeline.F_constraint,
         )
 
@@ -906,56 +896,53 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
             lse = "f"  # lse: only false
             dropout = "f"  # dropout: only false
             skip = "f"  # skip: only false
-            sink = "f"  # sink: only false
             for mask, bias in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
             ):
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "t", "f", "f", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "t", "f", "f", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
         elif dtype in cls._DT_FP16_BF16:
             qscale = "no"
             lse = "f"  # lse: only false
             dropout = "f"  # dropout: only false
             skip = "f"  # skip: only false
-            sink = "f"  # sink: only false
             for mask, bias in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
             ):
                 if hdim == 256 and hdim_v == 256:
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
                     # the below two is used for hdim vectorize load
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "f", "f", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "f", "f", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
                 else:
                     if bias == "bias":
                         # TODO: rocm 6.2 compiler problem if using qr_async for bias case
-                        pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
-                        pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
                     else:
-                        pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "f", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
-                        pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "f", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
                     if receipt == 1 and bias != "bias":
-                        pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip # TODO: cover arbitraty hdim# fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip # TODO: cover arbitraty hdim# fmt: skip
         elif dtype in cls._DT_FP8BF16 or dtype in cls._DT_FP8FP32:
             # no need lse/dropout kernels
             bias = "no"  # bias: only no
             lse = "f"  # lse: only false
             dropout = "f"  # dropout: only false
             skip = "f"  # skip: only false
-            sink = "f"  # sink: only false
             for mask, qscale in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 ["no", "pertensor"],
             ):
                 if hdim == 64:
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
                 else:
-                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "f", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "f", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
         elif dtype in ["fp8", "fp8fp16", "bf8"]:
             # TODO
             pass
@@ -1030,26 +1017,24 @@ class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
             lse = "f"  # lse: only false
             dropout = "f"  # dropout: only false
             skip = "f"  # skip: only false
-            sink = "f"  # sink: only false
             for mask, bias in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
             ):
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
         elif dtype in cls._DT_FP8_FP8BF16 or dtype in cls._DT_FP8FP32:
             # no need lse/dropout kernels
             bias = "no"  # bias: only no
             lse = "f"  # lse: only false
             dropout = "f"  # dropout: only false
             skip = "f"  # skip: only false
-            sink = "f"  # sink: only false
             for mask, qscale in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 ["no", "pertensor"],
             ):
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f", sink))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, lse, dropout, qscale, mask, skip, "f"))  # fmt: skip
         return pipelines
 
 

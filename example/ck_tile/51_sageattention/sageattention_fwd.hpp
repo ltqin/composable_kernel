@@ -231,7 +231,6 @@ struct sageattn_fwd_args
                                            // array [batch + 1]. (Used with padding)
     const void* cu_seqlen_k_ptr = nullptr; // Cumulative logical (excluding padding) sequence length
                                            // array [batch + 1]. (Used with padding)
-    const void* sink_ptr;
 
     ck_tile::index_t seqlen_q;
     ck_tile::index_t seqlen_k;
@@ -267,7 +266,6 @@ struct sageattn_fwd_args
 
     ck_tile::index_t window_size_left;
     ck_tile::index_t window_size_right;
-    ck_tile::index_t sink_size;
     ck_tile::index_t mask_type;
     ck_tile::index_t min_seqlen_q;
 
@@ -320,15 +318,13 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.nhead_stride_o,
                                                  args.window_size_left,
                                                  args.window_size_right,
-                                                 args.sink_size,
                                                  args.mask_type,
                                                  args.min_seqlen_q,
                                                  args.p_drop,
                                                  args.s_randval,
                                                  args.drop_seed_offset,
                                                  args.cu_seqlen_q_ptr,
-                                                 args.cu_seqlen_k_ptr,
-                                                 args.sink_ptr);
+                                                 args.cu_seqlen_k_ptr);
         }
         else
         { // create batch mode kernel arguments
@@ -371,14 +367,12 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.batch_stride_o,
                                                  args.window_size_left,
                                                  args.window_size_right,
-                                                 args.sink_size,
                                                  args.mask_type,
                                                  args.p_drop,
                                                  args.s_randval,
                                                  args.drop_seed_offset,
                                                  args.cu_seqlen_q_ptr,
-                                                 args.cu_seqlen_k_ptr,
-                                                 args.sink_ptr);
+                                                 args.cu_seqlen_k_ptr);
         }
     }();
 
@@ -465,7 +459,6 @@ struct sageattn_fwd_traits
     bool has_dropout;
     quant_scale_enum qscale_type;
     bool skip_min_seqlen_q = false;
-    bool has_sink          = false;
     // TODO: padding check is inside this api
 };
 float sageattn_fwd(sageattn_fwd_traits, sageattn_fwd_args, const ck_tile::stream_config&);

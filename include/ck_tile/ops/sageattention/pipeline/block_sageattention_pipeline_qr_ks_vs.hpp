@@ -166,8 +166,7 @@ struct BlockSageAttentionPipelineQRKSVS
                const AttentionVariantParams& variant_params,
                const BlockIndices& block_indices,
                void* smem_ptr,
-               DropoutType& dropout,
-               const float sink_v) const
+               DropoutType& dropout) const
     {
         static_assert(
             std::is_same_v<QDataType, remove_cvref_t<typename QDramBlockWindowTmp::DataType>> &&
@@ -231,20 +230,6 @@ struct BlockSageAttentionPipelineQRKSVS
         auto l     = MLBlockTileType{};
 
         clear_tile(o_acc);
-        if(__builtin_isinf_sign(sink_v) >= 0)
-        {
-#if CK_TILE_FMHA_FWD_FAST_EXP2
-            if constexpr(BiasEnum == BlockAttentionBiasEnum::ALIBI ||
-                         BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-                set_tile(m, sink_v * scale_s * C_LOG2E);
-            else
-                set_tile(m, sink_v * C_LOG2E);
-#else
-            set_tile(m, sink_v);
-#endif
-            set_tile(l, SMPLComputeDataType{1.0f});
-        }
-        else
         {
             set_tile(m, -numeric<SMPLComputeDataType>::infinity());
             clear_tile(l);
@@ -252,24 +237,14 @@ struct BlockSageAttentionPipelineQRKSVS
         const auto q_origin = q_dram_window.get_window_origin();
 
         const auto tile_range_result = [&mask, &q_origin]() {
-            if constexpr(kHasSink)
-                return mask.GetSinkTileRangeAlongX(
-                    q_origin.at(number<0>{}), number<kM0>{}, number<kN0>{});
-            else
-            {
-                auto [start, end] =
-                    mask.GetTileRangeAlongX(q_origin.at(number<0>{}), number<kM0>{}, number<kN0>{});
-                return ck_tile::make_tuple(0, start, end);
-            }
+            auto [start, end] =
+                mask.GetTileRangeAlongX(q_origin.at(number<0>{}), number<kM0>{}, number<kN0>{});
+            return ck_tile::make_tuple(start, end);
         }();
-        const auto sink_seq_end   = tile_range_result.get(ck_tile::number<0>{});
-        const auto seqlen_k_start = tile_range_result.get(ck_tile::number<1>{});
-        const auto seqlen_k_end   = tile_range_result.get(ck_tile::number<2>{});
+        const auto seqlen_k_start = tile_range_result.get(ck_tile::number<0>{});
+        const auto seqlen_k_end   = tile_range_result.get(ck_tile::number<1>{});
 
-        const auto kv_load_start = (sink_seq_end == 0 && seqlen_k_start > 0) ? seqlen_k_start : 0;
-        const auto num_sink_loop = integer_divide_ceil(sink_seq_end, kN0);
-        const auto num_total_loop =
-            integer_divide_ceil(seqlen_k_end - seqlen_k_start, kN0) + num_sink_loop;
+        const auto num_total_loop = integer_divide_ceil(seqlen_k_end - seqlen_k_start, kN0);
 
         // check early exit if no work to do
         if constexpr(FmhaMask::IsMasking || kPadSeqLenK)
@@ -281,14 +256,7 @@ struct BlockSageAttentionPipelineQRKSVS
                     auto lse =
                         make_static_distributed_tensor<LSEDataType>(m.get_tile_distribution());
 
-                    if(__builtin_isinf_sign(sink_v) >= 0)
-                    {
-                        set_tile(lse, SMPLComputeDataType{sink_v * scale_s});
-                    }
-                    else
-                    {
-                        set_tile(lse, -numeric<SMPLComputeDataType>::infinity());
-                    }
+                    set_tile(lse, -numeric<SMPLComputeDataType>::infinity());
 
                     store_tile(lse_dram_window_tmp, tile_elementwise_in(lse_element_func, lse));
                 }
@@ -302,22 +270,22 @@ struct BlockSageAttentionPipelineQRKSVS
         auto k_dram_block_window =
             make_tile_window(k_dram_block_window_tmp.get_bottom_tensor_view(),
                              k_dram_block_window_tmp.get_window_lengths(),
-                             {kv_load_start, 0});
+                             {0, 0});
 
         const auto bias_origin = bias_dram_block_window_tmp.get_window_origin();
         auto bias_dram_window =
             make_tile_window(bias_dram_block_window_tmp.get_bottom_tensor_view(),
                              bias_dram_block_window_tmp.get_window_lengths(),
-                             {bias_origin.at(number<0>{}), kv_load_start}, // M/N
+                             {bias_origin.at(number<0>{}), 0}, // M/N
                              Policy::template MakeBiasDramTileDistribution<decltype(gemm_0)>());
 
         auto randval_dram_window = dropout.template MakeRandvalDramWindow<decltype(gemm_0)>(
-            randval_dram_block_window_tmp, kv_load_start);
+            randval_dram_block_window_tmp, 0);
 
         auto v_dram_window =
             make_tile_window(v_dram_block_window_tmp.get_bottom_tensor_view(),
                              v_dram_block_window_tmp.get_window_lengths(),
-                             {0, kv_load_start}, // TODO: hdim split?
+                             {0, 0}, // TODO: hdim split?
                              Policy::template MakeVDramTileDistribution<Problem>());
 
         auto q_tile = tile_elementwise_in(q_element_func, q);
@@ -490,11 +458,6 @@ struct BlockSageAttentionPipelineQRKSVS
 #endif
                 }
             }
-            if constexpr(kHasSink)
-            {
-                if(i_total_loops == 0)
-                    move_tile_window(bias_dram_window, {0, seqlen_k_start - sink_seq_end});
-            }
             move_tile_window(bias_dram_window, {0, kN0});
             if constexpr(kPadSeqLenK || FmhaMask::IsMasking)
             {
@@ -645,17 +608,7 @@ struct BlockSageAttentionPipelineQRKSVS
                 block_sync_lds();
                 auto randval_ptr = reinterpret_cast<char*>(smem_ptr);
 
-                index_t seq_offset = [&]() {
-                    if constexpr(!kHasSink)
-                        return seqlen_k_start + i_total_loops * kN0;
-
-                    const bool in_sink_phase = (num_sink_loop > i_total_loops);
-                    if(i_total_loops == num_sink_loop)
-                        move_tile_window(randval_dram_window, {0, seqlen_k_start - sink_seq_end});
-
-                    return in_sink_phase ? (kv_load_start + i_total_loops * kN0)
-                                         : (seqlen_k_start + (i_total_loops - num_sink_loop) * kN0);
-                }();
+                index_t seq_offset = seqlen_k_start + i_total_loops * kN0;
 
                 dropout.template Run<decltype(gemm_0), SMPLComputeDataType, RandValOutputDataType>(
                     randval_ptr, seq_offset, p_compute, randval_dram_window);
@@ -710,14 +663,6 @@ struct BlockSageAttentionPipelineQRKSVS
                 });
             }
             // move K tile windows
-            if constexpr(kHasSink)
-            {
-                if(i_total_loops == 0)
-                {
-                    move_tile_window(k_dram_block_window, {seqlen_k_start - sink_seq_end, 0});
-                    move_tile_window(v_dram_window, {0, seqlen_k_start - sink_seq_end});
-                }
-            }
             move_tile_window(k_dram_block_window, {kN0, 0});
             // tail
             {
@@ -821,8 +766,7 @@ struct BlockSageAttentionPipelineQRKSVS
                const AttentionVariantParams& variant_params,
                const BlockIndices& block_indices,
                void* smem_ptr,
-               DropoutType& dropout,
-               const float sink_v) const
+               DropoutType& dropout) const
     {
         return operator()(q_dram_block_window_tmp,
                           identity{},
@@ -845,8 +789,7 @@ struct BlockSageAttentionPipelineQRKSVS
                           variant_params,
                           block_indices,
                           smem_ptr,
-                          dropout,
-                          sink_v);
+                          dropout);
     }
 };
 
