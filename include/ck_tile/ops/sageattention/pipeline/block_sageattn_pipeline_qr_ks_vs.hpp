@@ -5,7 +5,7 @@
 
 #include "ck_tile/core.hpp"
 #include "ck_tile/ops/fmha/block/block_attention_bias_enum.hpp"
-#include "ck_tile/ops/sageattention/pipeline/block_sageattention_pipeline_qr_ks_vs_default_policy.hpp"
+#include "ck_tile/ops/sageattention/pipeline/block_sageattn_pipeline_qr_ks_vs_default_policy.hpp"
 #include "ck_tile/ops/reduce/block/block_reduce.hpp"
 
 namespace ck_tile {

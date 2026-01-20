@@ -7,7 +7,7 @@
 #include "ck_tile/host/device_prop.hpp"
 #include "ck_tile/host/kernel_launch.hpp"
 #include "ck_tile/ops/epilogue.hpp"
-#include "ck_tile/ops/sageattention.hpp"
+#include "ck_tile/ops/sageattn.hpp"
 
 #include "bias.hpp"
 #include "mask.hpp"
