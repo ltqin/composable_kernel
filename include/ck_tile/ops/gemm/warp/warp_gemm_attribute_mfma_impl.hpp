@@ -1732,6 +1732,97 @@ template <WGAttrCtlEnum Ctrl_ = WGAttrCtlEnum::Default_>
 using WarpGemmAttributeMfmaImpl_f32_32x32x64_bf8_bf8 =
     WarpGemmAttributeMfmaImpl_f32_32x32x64_f8_bf8_base<bf8_t, bf8_t, Ctrl_>;
 
+// FP4 version (32x32x64, 4 registers)
+template <WGAttrCtlEnum Ctrl_ = WGAttrCtlEnum::Default_>
+struct WarpGemmAttributeMfmaImpl_f32_32x32x64_fp4_fp4_scale
+{
+    static constexpr WGAttrCtlEnum Ctrl = Ctrl_;
+    using ADataType                     = pk_fp4_t;
+    using BDataType                     = pk_fp4_t;
+    using CDataType                     = float;
+
+    // 16 pk_fp4_t = 32 FP4 elements (each pk_fp4_t packs 2 FP4 values)
+    using AVecType = ext_vector_t<pk_fp4_t, 16>;
+    using BVecType = ext_vector_t<pk_fp4_t, 16>;
+    using CVecType = ext_vector_t<float, 16>;
+
+    static constexpr index_t kM = 32;
+    static constexpr index_t kN = 32;
+    static constexpr index_t kK = 64;
+
+    static constexpr index_t kAMBlock = 1;
+    static constexpr index_t kBNBlock = 1;
+
+    static constexpr index_t kAMLane     = 32;
+    static constexpr index_t kBNLane     = 32;
+    static constexpr index_t kABKLane    = 2;
+    static constexpr index_t kABKPerLane = 32;
+
+    static constexpr index_t kCMLane     = 2;
+    static constexpr index_t kCNLane     = 32;
+    static constexpr index_t kCM0PerLane = 4;
+    static constexpr index_t kCM1PerLane = 4;
+
+    // c_vec += a_vec * b_vec with scale parameters (FP8 E8M0 format)
+    template <index_t opselA, index_t opselB, bool post_nop_ = false>
+    CK_TILE_DEVICE void operator()(CVecType& c_vec,
+                                   const AVecType& a_vec,
+                                   const uint8_t& a_scale,
+                                   const BVecType& b_vec,
+                                   const uint8_t& b_scale,
+                                   bool_constant<post_nop_> = {}) const
+    {
+#if defined(__gfx950__)
+        // fp4 x fp4: use int32x4_t (16 bytes = 4 registers)
+        c_vec = __builtin_amdgcn_mfma_scale_f32_32x32x64_f8f6f4(bit_cast<int32x4_t>(a_vec),
+                                                                bit_cast<int32x4_t>(b_vec),
+                                                                c_vec,
+                                                                4,
+                                                                4,
+                                                                opselA,
+                                                                a_scale,
+                                                                opselB,
+                                                                b_scale);
+#else
+        ck_tile::ignore = c_vec;
+        ck_tile::ignore = a_vec;
+        ck_tile::ignore = b_vec;
+        ck_tile::ignore = a_scale;
+        ck_tile::ignore = b_scale;
+#endif
+    }
+
+    // c_vec = a_vec * b_vec with scale parameters (FP8 E8M0 format)
+    template <index_t opselA, index_t opselB>
+    CK_TILE_DEVICE CVecType operator()(const AVecType& a_vec,
+                                       const uint8_t& a_scale,
+                                       const BVecType& b_vec,
+                                       const uint8_t& b_scale) const
+    {
+        CVecType c_vec{0.f};
+        operator()<opselA, opselB>(c_vec, a_vec, a_scale, b_vec, b_scale);
+        return c_vec;
+    }
+
+    // c_vec += a_vec * b_vec (without scale, for backward compatibility)
+    // scale=127 means 2^(127-127) = 2^0 = 1 (no scaling)
+    template <bool post_nop_ = false>
+    CK_TILE_DEVICE void operator()(CVecType& c_vec,
+                                   const AVecType& a_vec,
+                                   const BVecType& b_vec,
+                                   bool_constant<post_nop_> = {}) const
+    {
+        operator()<0, 0>(c_vec, a_vec, 127, b_vec, 127);
+    }
+
+    // c_vec = a_vec * b_vec (without scale, for backward compatibility)
+    // scale=127 means 2^(127-127) = 2^0 = 1 (no scaling)
+    CK_TILE_DEVICE CVecType operator()(const AVecType& a_vec, const BVecType& b_vec) const
+    {
+        return operator()<0, 0>(a_vec, 127, b_vec, 127);
+    }
+};
+
 // int8
 template <WGAttrCtlEnum Ctrl_ = WGAttrCtlEnum::Default_>
 struct WarpGemmAttributeMfmaImpl_i32_32x32x16_i8
