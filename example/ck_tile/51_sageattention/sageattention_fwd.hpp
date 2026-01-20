@@ -282,7 +282,6 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.q_descale_ptr,
                                                  args.k_descale_ptr,
                                                  args.v_descale_ptr,
-                                                 args.lse_ptr,
                                                  args.o_ptr,
                                                  args.seqstart_q_ptr,
                                                  args.seqstart_k_ptr,
@@ -302,7 +301,6 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.nhead_stride_k,
                                                  args.nhead_stride_v,
                                                  args.nhead_stride_bias,
-                                                 args.nhead_stride_lse,
                                                  args.nhead_stride_o,
                                                  args.window_size_left,
                                                  args.window_size_right,
@@ -320,7 +318,6 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.q_descale_ptr,
                                                  args.k_descale_ptr,
                                                  args.v_descale_ptr,
-                                                 args.lse_ptr,
                                                  args.o_ptr,
                                                  args.seqlen_q,
                                                  args.seqlen_k,
@@ -338,13 +335,11 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.nhead_stride_k,
                                                  args.nhead_stride_v,
                                                  args.nhead_stride_bias,
-                                                 args.nhead_stride_lse,
                                                  args.nhead_stride_o,
                                                  args.batch_stride_q,
                                                  args.batch_stride_k,
                                                  args.batch_stride_v,
                                                  args.batch_stride_bias,
-                                                 args.batch_stride_lse,
                                                  args.batch_stride_o,
                                                  args.window_size_left,
                                                  args.window_size_right,
@@ -382,7 +377,6 @@ template <ck_tile::index_t HDim_,
           ck_tile::BlockSageAttnPipelineEnum FmhaPipelineEnum_,
           typename FmhaMask_,
           ck_tile::BlockAttentionBiasEnum BiasEnum_,
-          bool kStoreLse_,
           ck_tile::BlockAttentionQuantScaleEnum QScaleEnum_,
           bool kPadS_,
           bool kPadSK_,
@@ -405,7 +399,6 @@ struct sageattn_fwd_traits_
     static constexpr auto FmhaPipelineEnum           = FmhaPipelineEnum_;
     using FmhaMask                                   = ck_tile::remove_cvref_t<FmhaMask_>;
     static constexpr auto BiasEnum                   = BiasEnum_;
-    static constexpr bool kStoreLse                  = kStoreLse_;
     static constexpr auto QScaleEnum                 = QScaleEnum_;
     static constexpr bool kPadS                      = kPadS_;
     static constexpr bool kPadSK                     = kPadSK_;

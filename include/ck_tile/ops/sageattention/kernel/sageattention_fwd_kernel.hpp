@@ -43,7 +43,6 @@ struct SageAttnFwdKernel
     using BiasDataType = ck_tile::remove_cvref_t<typename SageAttnPipeline::BiasDataType>;
     using RandValOutputDataType =
         ck_tile::remove_cvref_t<typename SageAttnPipeline::RandValOutputDataType>;
-    using LSEDataType  = ck_tile::remove_cvref_t<typename SageAttnPipeline::LSEDataType>;
     using ODataType    = ck_tile::remove_cvref_t<typename SageAttnPipeline::ODataType>;
     using SaccDataType = ck_tile::remove_cvref_t<typename SageAttnPipeline::SaccDataType>;
 
@@ -56,7 +55,6 @@ struct SageAttnFwdKernel
     static constexpr bool kPadHeadDimV = SageAttnPipeline::kPadHeadDimV;
     // logits_soft_cap is always disabled
     static constexpr auto BiasEnum        = SageAttnPipeline::BiasEnum;
-    static constexpr bool kStoreLSE       = SageAttnPipeline::kStoreLSE;
     static constexpr auto QScaleEnum      = SageAttnPipeline::Problem::QScaleEnum;
     static constexpr bool kSkipMinSeqlenQ = SageAttnPipeline::Problem::kSkipMinSeqlenQ;
 
@@ -144,13 +142,6 @@ struct SageAttnFwdKernel
         const void* v_descale_ptr = nullptr;
     };
 
-    struct SageAttnFwdCommonLSEKargs
-    {
-        void* lse_ptr                     = nullptr;
-        ck_tile::index_t nhead_stride_lse = 0;
-        ck_tile::index_t batch_stride_lse = 0;
-    };
-
     struct SageAttnFwdSkipMinSeqlenQKargs
     {
         ck_tile::index_t min_seqlen_q = 0;
@@ -164,10 +155,9 @@ struct SageAttnFwdKernel
                                                 SageAttnFwdAlibiKargs,
                                                 SageAttnFwdEmptyKargs<0>>>,
           std::conditional_t<kHasMask, SageAttnFwdMaskKargs, SageAttnFwdEmptyKargs<1>>,
-          std::conditional_t<kStoreLSE, SageAttnFwdCommonLSEKargs, SageAttnFwdEmptyKargs<2>>,
           std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
                              SageAttnFwdCommonQScaleKargs,
-                             SageAttnFwdEmptyKargs<3>>
+                             SageAttnFwdEmptyKargs<2>>
     {
         ck_tile::index_t batch_stride_q;
         ck_tile::index_t batch_stride_k;
@@ -188,13 +178,12 @@ struct SageAttnFwdKernel
                                                 SageAttnFwdAlibiKargs,
                                                 SageAttnFwdEmptyKargs<0>>>,
           std::conditional_t<kHasMask, SageAttnFwdMaskKargs, SageAttnFwdEmptyKargs<1>>,
-          std::conditional_t<kStoreLSE, SageAttnFwdCommonLSEKargs, SageAttnFwdEmptyKargs<2>>,
           std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
                              SageAttnFwdCommonQScaleKargs,
-                             SageAttnFwdEmptyKargs<3>>,
+                             SageAttnFwdEmptyKargs<2>>,
           std::conditional_t<kSkipMinSeqlenQ,
                              SageAttnFwdSkipMinSeqlenQKargs,
-                             SageAttnFwdEmptyKargs<4>>
+                             SageAttnFwdEmptyKargs<3>>
     {
         const int32_t* seqstart_q_ptr;
         const int32_t* seqstart_k_ptr;
@@ -225,7 +214,6 @@ struct SageAttnFwdKernel
                   const void* q_descale_ptr,
                   const void* k_descale_ptr,
                   const void* v_descale_ptr,
-                  void* lse_ptr,
                   void* o_ptr,
                   ck_tile::index_t seqlen_q,
                   ck_tile::index_t seqlen_k,
@@ -243,13 +231,11 @@ struct SageAttnFwdKernel
                   ck_tile::index_t nhead_stride_k,
                   ck_tile::index_t nhead_stride_v,
                   ck_tile::index_t nhead_stride_bias,
-                  ck_tile::index_t nhead_stride_lse,
                   ck_tile::index_t nhead_stride_o,
                   ck_tile::index_t batch_stride_q,
                   ck_tile::index_t batch_stride_k,
                   ck_tile::index_t batch_stride_v,
                   ck_tile::index_t batch_stride_bias,
-                  ck_tile::index_t batch_stride_lse,
                   ck_tile::index_t batch_stride_o,
                   ck_tile::index_t window_size_left,
                   ck_tile::index_t window_size_right,
@@ -282,7 +268,6 @@ struct SageAttnFwdKernel
                      nhead_stride_o}, // args for common karg
                     {},               // placeholder for bias
                     {},               // placeholder for mask
-                    {},               // placeholder for lse
                     {},               // placeholder for qscale
                     batch_stride_q,
                     batch_stride_k,
@@ -306,12 +291,6 @@ struct SageAttnFwdKernel
             kargs.window_size_left  = window_size_left;
             kargs.window_size_right = window_size_right;
             kargs.mask_type         = static_cast<ck_tile::GenericAttentionMaskEnum>(mask_type);
-        }
-        if constexpr(kStoreLSE)
-        {
-            kargs.lse_ptr          = lse_ptr;
-            kargs.nhead_stride_lse = nhead_stride_lse;
-            kargs.batch_stride_lse = batch_stride_lse;
         }
         if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
         {
@@ -529,7 +508,6 @@ struct SageAttnFwdKernel
                   const void* q_descale_ptr,
                   const void* k_descale_ptr,
                   const void* v_descale_ptr,
-                  void* lse_ptr,
                   void* o_ptr,
                   const void* seqstart_q_ptr,
                   const void* seqstart_k_ptr,
@@ -549,7 +527,6 @@ struct SageAttnFwdKernel
                   ck_tile::index_t nhead_stride_k,
                   ck_tile::index_t nhead_stride_v,
                   ck_tile::index_t nhead_stride_bias,
-                  ck_tile::index_t nhead_stride_lse,
                   ck_tile::index_t nhead_stride_o,
                   ck_tile::index_t window_size_left,
                   ck_tile::index_t window_size_right,
@@ -583,7 +560,6 @@ struct SageAttnFwdKernel
                      nhead_stride_o}, // args for common karg
                     {},               // placeholder for bias
                     {},               // placeholder for mask
-                    {},               // placeholder for lse
                     {},               // placeholder for qscale
                     {},               // placeholder for min_seqlen_q
                     reinterpret_cast<const int32_t*>(seqstart_q_ptr),
@@ -607,11 +583,6 @@ struct SageAttnFwdKernel
             kargs.window_size_left  = window_size_left;
             kargs.window_size_right = window_size_right;
             kargs.mask_type         = static_cast<ck_tile::GenericAttentionMaskEnum>(mask_type);
-        }
-        if constexpr(kStoreLSE)
-        {
-            kargs.lse_ptr          = lse_ptr;
-            kargs.nhead_stride_lse = nhead_stride_lse;
         }
         if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
         {
@@ -936,7 +907,6 @@ struct SageAttnFwdKernel
             long_index_t batch_offset_k    = 0;
             long_index_t batch_offset_v    = 0;
             long_index_t batch_offset_bias = 0;
-            long_index_t batch_offset_lse  = 0;
             long_index_t batch_offset_o    = 0;
 
             if constexpr(kIsGroupMode)
@@ -959,11 +929,6 @@ struct SageAttnFwdKernel
                 if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
                 {
                     batch_offset_bias = query_start * kargs.stride_bias;
-                }
-                if constexpr(kStoreLSE)
-                {
-                    // LSE follows the physical layout to stay consistent with other tensors
-                    batch_offset_lse = query_start;
                 }
                 batch_offset_o = query_start * kargs.stride_o;
 
@@ -1022,10 +987,6 @@ struct SageAttnFwdKernel
                 {
                     batch_offset_bias =
                         static_cast<long_index_t>(i_batch) * kargs.batch_stride_bias;
-                }
-                if constexpr(kStoreLSE)
-                {
-                    batch_offset_lse = static_cast<long_index_t>(i_batch) * kargs.batch_stride_lse;
                 }
                 batch_offset_o = static_cast<long_index_t>(i_batch) * kargs.batch_stride_o;
 
@@ -1190,38 +1151,6 @@ struct SageAttnFwdKernel
                 }
             }();
 
-            // lse
-            auto lse_dram_window = [&, i_nhead_ = i_nhead]() {
-                constexpr auto lse_dram_window_lengths =
-                    make_tuple(number<SageAttnPipeline::kM0>{});
-                if constexpr(kStoreLSE)
-                {
-                    LSEDataType* lse_ptr =
-                        reinterpret_cast<LSEDataType*>(kargs.lse_ptr) +
-                        static_cast<long_index_t>(i_nhead_) * kargs.nhead_stride_lse +
-                        batch_offset_lse;
-
-                    const auto lse_dram = [&]() {
-                        const auto lse_dram_naive =
-                            make_naive_tensor_view<address_space_enum::global>(
-                                lse_ptr,
-                                make_tuple(kargs.seqlen_q),
-                                make_tuple(1),
-                                number<1>{},
-                                number<1>{});
-
-                        return pad_tensor_view(
-                            lse_dram_naive, lse_dram_window_lengths, sequence<kPadSeqLenQ>{});
-                    }();
-
-                    return make_tile_window(lse_dram, lse_dram_window_lengths, {i_m0});
-                }
-                else
-                {
-                    return make_null_tile_window(lse_dram_window_lengths);
-                }
-            }();
-
             FmhaMask mask = [&]() {
                 if constexpr(kHasMask)
                     return ck_tile::make_generic_attention_mask_from_lr_window<FmhaMask>(
@@ -1315,8 +1244,6 @@ struct SageAttnFwdKernel
                                               identity{}, // v_element_func
                                               bias_dram_window,
                                               identity{}, // bias_element_func
-                                              lse_dram_window,
-                                              identity{}, // lse_element_func
                                               identity{}, // s_acc_element_func
                                               scales<remove_cvref_t<decltype(scale_p)>>{
                                                   scale_p},       // p_compute_element_func
@@ -1335,7 +1262,6 @@ struct SageAttnFwdKernel
                                               k_dram_window,
                                               v_dram_window,
                                               bias_dram_window,
-                                              lse_dram_window,
                                               mask,
                                               position_encoding,
                                               variant_params.sm_scale,
@@ -1390,7 +1316,6 @@ struct SageAttnFwdKernel
             long_index_t batch_offset_k    = 0; // unused for paged-kvcache
             long_index_t batch_offset_v    = 0; // unused for paged-kvcache
             long_index_t batch_offset_bias = 0;
-            long_index_t batch_offset_lse  = 0;
             long_index_t batch_offset_o    = 0;
             // index_t kv_l2p_offset =
             //     0; // logical-to-physical offset of seqlen_k coordinate. only used for
@@ -1419,9 +1344,7 @@ struct SageAttnFwdKernel
                     batch_offset_bias = query_start * kargs.stride_bias;
                 }
 
-                // LSE layout is [nhead, total_seqlen] following the physical layout for Q/O
-                batch_offset_lse = query_start;
-                batch_offset_o   = query_start * kargs.stride_o;
+                batch_offset_o = query_start * kargs.stride_o;
 
                 // get real # queries & # keys under group mode
                 if(kargs.seqlen_q_ptr != nullptr)
@@ -1466,10 +1389,6 @@ struct SageAttnFwdKernel
                 batch_offset_q = static_cast<long_index_t>(i_batch) * kargs.batch_stride_q;
                 batch_offset_k = static_cast<long_index_t>(i_batch) * kargs.batch_stride_k;
                 batch_offset_v = static_cast<long_index_t>(i_batch) * kargs.batch_stride_v;
-                if constexpr(kStoreLSE)
-                {
-                    batch_offset_lse = static_cast<long_index_t>(i_batch) * kargs.batch_stride_lse;
-                }
                 batch_offset_o = static_cast<long_index_t>(i_batch) * kargs.batch_stride_o;
 
                 if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
@@ -1938,40 +1857,6 @@ struct SageAttnFwdKernel
                 }
             }();
 
-            // lse acc
-            auto lse_dram_window = [&, i_nhead_ = i_nhead]() {
-                constexpr auto lse_dram_window_lengths =
-                    make_tuple(number<SageAttnPipeline::kM0>{});
-                if constexpr(kStoreLSE)
-                {
-                    LSEDataType* lse_ptr =
-                        reinterpret_cast<LSEDataType*>(kargs.lse_ptr) +
-                        static_cast<long_index_t>(i_nhead_) * kargs.nhead_stride_lse +
-                        batch_offset_lse;
-
-                    const auto lse_dram = [&] {
-                        const auto lse_dram_naive = [&] {
-                            {
-                                return make_naive_tensor_view<address_space_enum::global>(
-                                    lse_ptr,
-                                    make_tuple(kargs.seqlen_q),
-                                    make_tuple(1),
-                                    number<1>{},
-                                    number<1>{});
-                            }
-                        }();
-                        return pad_tensor_view(
-                            lse_dram_naive, lse_dram_window_lengths, sequence<kPadSeqLenQ>{});
-                    }();
-
-                    return make_tile_window(lse_dram, lse_dram_window_lengths, {i_m0});
-                }
-                else
-                {
-                    return make_null_tile_window(lse_dram_window_lengths);
-                }
-            }();
-
             FmhaMask mask = [&]() {
                 if constexpr(kHasMask)
                     return ck_tile::make_generic_attention_mask_from_lr_window<FmhaMask>(
@@ -2039,7 +1924,6 @@ struct SageAttnFwdKernel
                                               k_dram_window,
                                               v_dram_window,
                                               bias_dram_window,
-                                              lse_dram_window,
                                               mask,
                                               position_encoding,
                                               kargs.scale_s,
@@ -2055,7 +1939,6 @@ struct SageAttnFwdKernel
                                               k_dram_window,
                                               v_dram_window,
                                               bias_dram_window,
-                                              lse_dram_window,
                                               mask,
                                               position_encoding,
                                               kargs.scale_s,

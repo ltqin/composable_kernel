@@ -58,7 +58,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
     static constexpr bool kPadHeadDimQ = true; // support multiple of vector(like 8x)
     static constexpr bool kPadHeadDimV = true; // support multiple of vector(like 8x)
     static constexpr auto BiasEnum     = Problem::BiasEnum;
-    static constexpr bool kStoreLSE    = Problem::kStoreLSE;
 
     // last dimension vector length used to create tensor view(and decide buffer_load vector length)
     // ... together with tensor distribution. tensor dist should able to overwrite this
@@ -137,12 +136,10 @@ struct BlockSageAttentionPipelineQRKSVSAsync
               typename KDramBlockWindowTmp,
               typename VDramBlockWindowTmp,
               typename BiasDramBlockWindowTmp,
-              typename LSEDramBlockWindowTmp,
               typename QElementFunction,
               typename KElementFunction,
               typename VElementFunction,
               typename BiasElementFunction,
-              typename LSEElementFunction,
               typename SAccElementFunction,
               typename PComputeElementFunction,
               typename OAccElementFunction,
@@ -158,8 +155,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                const VElementFunction& v_element_func,
                const BiasDramBlockWindowTmp& bias_dram_block_window_tmp, // M0*N0 tile
                const BiasElementFunction& bias_element_func,
-               LSEDramBlockWindowTmp& lse_dram_window_tmp, // M0*1 tile
-               const LSEElementFunction& lse_element_func,
                const SAccElementFunction& s_acc_element_func,
                const PComputeElementFunction& p_compute_element_func,
                const OAccElementFunction& o_acc_element_func,
@@ -276,15 +271,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
         {
             if(num_total_loop <= 0)
             {
-                if constexpr(kStoreLSE)
-                {
-                    auto lse =
-                        make_static_distributed_tensor<LSEDataType>(m.get_tile_distribution());
-
-                    set_tile(lse, -numeric<SMPLComputeDataType>::infinity());
-
-                    store_tile(lse_dram_window_tmp, tile_elementwise_in(lse_element_func, lse));
-                }
                 buffer_load_fence(0); // rocm-6.1, if whole tile is masked out, need to fence(0)
                                       // otherwise will have compute error(maybe compiler bug?)
 
@@ -688,33 +674,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
             }
         } while(i_total_loops < num_total_loop);
 
-        // store lse
-        if constexpr(kStoreLSE)
-        {
-            auto lse = make_static_distributed_tensor<LSEDataType>(m.get_tile_distribution());
-
-            constexpr auto lse_spans = decltype(lse)::get_distributed_spans();
-            sweep_tile_span(lse_spans[number<0>{}], [&, m_ = m, l_ = l](auto idx0) {
-                constexpr auto i_idx = make_tuple(idx0);
-#if CK_TILE_FMHA_FWD_FAST_EXP2
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS ||
-                             BiasEnum == BlockAttentionBiasEnum::ALIBI)
-                {
-                    lse(i_idx) = m_[i_idx] * R_LOG2E + log(l_[i_idx]);
-                }
-                else
-                {
-                    // logits_soft_cap is always disabled
-                    lse(i_idx) = m_[i_idx] * scale_s * R_LOG2E + log(l_[i_idx]);
-                }
-#else
-                lse(i_idx) = m_[i_idx] + log(l_[i_idx]);
-#endif
-            });
-
-            store_tile(lse_dram_window_tmp, tile_elementwise_in(lse_element_func, lse));
-        }
-
         // finally, O
         constexpr auto o_spans = decltype(o_acc)::get_distributed_spans();
 
@@ -743,7 +702,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
               typename KDramBlockWindowTmp,
               typename VDramBlockWindowTmp,
               typename BiasDramBlockWindowTmp,
-              typename LSEDramBlockWindowTmp,
               typename PositionEncoding,
               typename AttentionVariantParams,
               typename BlockIndices>
@@ -752,7 +710,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                const KDramBlockWindowTmp& k_dram_block_window_tmp,       // N0*K0 tile
                const VDramBlockWindowTmp& v_dram_block_window_tmp,       // N1*K1 tile
                const BiasDramBlockWindowTmp& bias_dram_block_window_tmp, // M0*N0 tile
-               LSEDramBlockWindowTmp& lse_dram_block_window_tmp,         // M0*1 tile
                FmhaMask mask,
                PositionEncoding position_encoding,
                float scale_s,
@@ -768,8 +725,6 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                           v_dram_block_window_tmp,
                           identity{},
                           bias_dram_block_window_tmp,
-                          identity{},
-                          lse_dram_block_window_tmp,
                           identity{},
                           identity{},
                           identity{},

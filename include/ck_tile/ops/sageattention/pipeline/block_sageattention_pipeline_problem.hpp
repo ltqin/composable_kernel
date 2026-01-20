@@ -58,7 +58,6 @@ struct BlockSageAttnPipelineProblem
     static constexpr bool kPadHeadDimV    = Traits::kPadHeadDimV;
     static constexpr bool kSkipMinSeqlenQ = Traits::kSkipMinSeqlenQ;
     static constexpr auto BiasEnum        = Traits::BiasEnum;
-    static constexpr bool kStoreLSE       = Traits::kStoreLSE;
     static constexpr auto QScaleEnum      = Traits::QScaleEnum;
     static constexpr index_t kBlockPerCu  = Traits::kBlockPerCu;
 };
