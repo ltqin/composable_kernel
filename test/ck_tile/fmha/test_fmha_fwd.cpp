@@ -39,7 +39,7 @@ struct TestConfigs
         std::tuple{32, -1}, std::tuple{64, -1}, std::tuple{128, -1}, std::tuple{256, -1}};
     static constexpr auto ModeValues        = std::array{mode_enum::batch, mode_enum::group};
     static constexpr auto IsVRowmajorValues = std::array{true};
-    static constexpr auto qscale_str        = "n";
+    static constexpr auto QscaleStrValues   = std::array{"n"};
     static constexpr bool def_lse           = true;
     static constexpr bool def_is_v_rowmajor = true;
     static int adjust_seqlen(int seqlen) { return seqlen; }
@@ -54,7 +54,7 @@ struct TestConfigs<FmhaFwdFp8Bf16>
     static constexpr auto AppendKVHDimValues = std::array{std::tuple{64, -1}, std::tuple{128, -1}};
     static constexpr auto ModeValues         = std::array{mode_enum::batch, mode_enum::group};
     static constexpr auto IsVRowmajorValues  = std::array{true};
-    static constexpr auto qscale_str         = "pt";
+    static constexpr auto QscaleStrValues    = std::array{"pt", "bs"};
     static constexpr bool def_lse            = false;
     static constexpr bool def_is_v_rowmajor  = true;
     // When there are no fp8 instances with padding, pad seqlen to avoid skipping most of the tests:
@@ -78,7 +78,7 @@ struct TestConfigs<FmhaFwdFp32>
     static constexpr auto AppendKVHDimValues = std::array<std::tuple<int, int>, 0>{};
     static constexpr auto ModeValues         = std::array{mode_enum::batch, mode_enum::group};
     static constexpr auto IsVRowmajorValues  = std::array{true};
-    static constexpr auto qscale_str         = "n";
+    static constexpr auto QscaleStrValues    = std::array{"n"};
     static constexpr bool def_lse            = true;
     static constexpr bool def_is_v_rowmajor  = true;
     static int adjust_seqlen(int seqlen) { return seqlen; }
@@ -89,7 +89,7 @@ static auto SplitKVHDimValues    = ValuesIn(TestConfigs<DataTypeConfig>::SplitKV
 static auto AppendKVHDimValues   = ValuesIn(TestConfigs<DataTypeConfig>::AppendKVHDimValues);
 static auto ModeValues           = ValuesIn(TestConfigs<DataTypeConfig>::ModeValues);
 static auto IsVRowmajorValues    = ValuesIn(TestConfigs<DataTypeConfig>::IsVRowmajorValues);
-constexpr static auto qscale_str = TestConfigs<DataTypeConfig>::qscale_str;
+static auto QscaleStrValues      = ValuesIn(TestConfigs<DataTypeConfig>::QscaleStrValues);
 constexpr bool def_lse           = TestConfigs<DataTypeConfig>::def_lse;
 constexpr bool def_is_v_rowmajor = TestConfigs<DataTypeConfig>::def_is_v_rowmajor;
 int adjust_seqlen(int seqlen) { return TestConfigs<DataTypeConfig>::adjust_seqlen(seqlen); }
@@ -138,7 +138,8 @@ class AllLong : public TestWithParam<
                                bool,
                                std::string,
                                float,
-                               std::tuple<int, int, int, int, int, int, int, int, std::string>>>
+                               std::tuple<int, int, int, int, int, int, int, int, std::string>,
+                               std::string>>
 {
 };
 
@@ -165,12 +166,14 @@ INSTANTIATE_TEST_SUITE_P(
                    std::tuple{3, 2, 1, -1, -1, 200, 520, -1, "t:128,30"},
                    std::tuple{2, 1, -1, -1, -1, 99, 32, -1, "b:4,35"},
                    std::tuple{1, 2, 1, -1, -1, 33, 0, -1, "2"},
-                   std::tuple{1, 2, 1, -1, -1, 1, 10, 32, "2"})));
+                   std::tuple{1, 2, 1, -1, -1, 1, 10, 32, "2"}),
+            QscaleStrValues));
 
 TEST_P(AllLong, DataTypeConfig)
 {
-    auto [_, hdims, perm, is_v_rowmajor, mode, lse, bias_str, p_drop, dims_mask] = GetParam();
-    auto [hdim_q, hdim_v]                                                        = hdims;
+    auto [_, hdims, perm, is_v_rowmajor, mode, lse, bias_str, p_drop, dims_mask, qscale_str] =
+        GetParam();
+    auto [hdim_q, hdim_v] = hdims;
     auto [batch, nhead, nhead_k, hdim_q_, hdim_v_, seqlen_q, seqlen_k, seqlen_kpad, mask_str] =
         dims_mask;
 
@@ -355,7 +358,8 @@ class HDimPadding
                                       bool,
                                       bool,
                                       mode_enum,
-                                      std::tuple<int, int, int, int, int, int, std::string>>>
+                                      std::tuple<int, int, int, int, int, int, std::string>,
+                                      std::string>>
 {
 };
 
@@ -372,11 +376,12 @@ INSTANTIATE_TEST_SUITE_P(TestCkTileFmhaFwd,
                                         std::tuple{2, 2, -1, 300, 400, 512, "t:64,64"},
                                         std::tuple{1, 4, 1, 512, 201, 256, "1"},
                                         std::tuple{1, 2, -1, 900, 256, -1, "0"},
-                                        std::tuple{2, 1, -1, 256, 256, -1, "1"})));
+                                        std::tuple{2, 1, -1, 256, 256, -1, "1"}),
+                                 QscaleStrValues));
 
 TEST_P(HDimPadding, DataTypeConfig)
 {
-    auto [hdims, perm, is_v_rowmajor, mode, dims_mask]                      = GetParam();
+    auto [hdims, perm, is_v_rowmajor, mode, dims_mask, qscale_str]          = GetParam();
     auto [hdim_q, hdim_v]                                                   = hdims;
     auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, seqlen_kpad, mask_str] = dims_mask;
 
@@ -420,7 +425,8 @@ class ElementwiseBias
                                       bool,
                                       mode_enum,
                                       std::string,
-                                      std::tuple<int, int, int, int, int, std::string>>>
+                                      std::tuple<int, int, int, int, int, std::string>,
+                                      std::string>>
 {
 };
 
@@ -432,13 +438,14 @@ INSTANTIATE_TEST_SUITE_P(TestCkTileFmhaFwd,
                                  Values("e:0", "e:1", "e:2"),
                                  Values(std::tuple{1, 4, 2, 1024, 100, "0"},
                                         std::tuple{3, 2, -1, 128, 256, "2"},
-                                        std::tuple{2, 2, -1, 130, 499, "t:50,64"})));
+                                        std::tuple{2, 2, -1, 130, 499, "t:50,64"}),
+                                 QscaleStrValues));
 
 TEST_P(ElementwiseBias, DataTypeConfig)
 {
-    auto [hdims, i_perm, mode, bias_str, dims_mask]            = GetParam();
-    auto [hdim_q, hdim_v]                                      = hdims;
-    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str] = dims_mask;
+    auto [hdims, i_perm, mode, bias_str, dims_mask, qscale_str] = GetParam();
+    auto [hdim_q, hdim_v]                                       = hdims;
+    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str]  = dims_mask;
 
     auto result = fmha_fwd_run<DataTypeConfig>(mode,
                                                batch,
@@ -479,6 +486,7 @@ class Alibi : public TestWithParam<std::tuple<std::tuple<int, int>,
                                               mode_enum,
                                               std::string,
                                               std::tuple<int, int, int, int, int>,
+                                              std::string,
                                               std::string>>
 {
 };
@@ -491,13 +499,14 @@ INSTANTIATE_TEST_SUITE_P(TestCkTileFmhaFwd,
                                  Values(std::tuple{1, 3, 3, 1024, 1000},
                                         std::tuple{3, 5, 5, 128, 256},
                                         std::tuple{2, 8, 2, 300, 355}),
-                                 Values("0", "t", "b", "t:50,64", "b:32,40")));
+                                 Values("0", "t", "b", "t:50,64", "b:32,40"),
+                                 QscaleStrValues));
 
 TEST_P(Alibi, DataTypeConfig)
 {
-    auto [hdims, mode, bias_str, dims, mask_str]     = GetParam();
-    auto [hdim_q, hdim_v]                            = hdims;
-    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k] = dims;
+    auto [hdims, mode, bias_str, dims, mask_str, qscale_str] = GetParam();
+    auto [hdim_q, hdim_v]                                    = hdims;
+    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k]         = dims;
 
     auto result = fmha_fwd_run<DataTypeConfig>(mode,
                                                batch,
@@ -538,7 +547,8 @@ class Dropout : public TestWithParam<std::tuple<std::tuple<int, int>,
                                                 mode_enum,
                                                 float,
                                                 std::tuple<uint64_t, uint64_t, bool>,
-                                                std::tuple<int, int, int, int, int, std::string>>>
+                                                std::tuple<int, int, int, int, int, std::string>,
+                                                std::string>>
 {
 };
 
@@ -551,14 +561,15 @@ INSTANTIATE_TEST_SUITE_P(TestCkTileFmhaFwd,
                                         std::tuple{34534564645, 7876878876864, true}),
                                  Values(std::tuple{2, 4, 2, 280, 512, "0"},
                                         std::tuple{3, 2, 2, 256, 128, "1"},
-                                        std::tuple{4, 3, 1, 100, 768, "2"})));
+                                        std::tuple{4, 3, 1, 100, 768, "2"}),
+                                 QscaleStrValues));
 
 TEST_P(Dropout, DataTypeConfig)
 {
-    auto [hdims, mode, p_drop, drop_seed_offset_prefs, dims_mask] = GetParam();
-    auto [hdim_q, hdim_v]                                         = hdims;
-    auto [drop_seed, drop_offset, drop_prefs]                     = drop_seed_offset_prefs;
-    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str]    = dims_mask;
+    auto [hdims, mode, p_drop, drop_seed_offset_prefs, dims_mask, qscale_str] = GetParam();
+    auto [hdim_q, hdim_v]                                                     = hdims;
+    auto [drop_seed, drop_offset, drop_prefs]                  = drop_seed_offset_prefs;
+    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str] = dims_mask;
 
     auto result = fmha_fwd_run<DataTypeConfig>(mode,
                                                batch,
@@ -602,7 +613,8 @@ class PagedKV : public TestWithParam<std::tuple<std::tuple<int, int>,
                                                 bool,
                                                 mode_enum,
                                                 int,
-                                                std::tuple<int, int, int, int, int, std::string>>>
+                                                std::tuple<int, int, int, int, int, std::string>,
+                                                std::string>>
 {
 };
 
@@ -617,13 +629,14 @@ INSTANTIATE_TEST_SUITE_P(TestCkTileFmhaFwd,
                                  Values(128, 256),
                                  Values(std::tuple{2, 3, 1, 200, 1024, "0"},
                                         std::tuple{3, 2, -1, 128, 768, "2"},
-                                        std::tuple{2, 2, -1, 230, 899, "t:50,64"})));
+                                        std::tuple{2, 2, -1, 230, 899, "t:50,64"}),
+                                 QscaleStrValues));
 
 TEST_P(PagedKV, DataTypeConfig)
 {
-    auto [hdims, i_perm, is_v_rowmajor, mode, page_block_size, dims_mask] = GetParam();
-    auto [hdim_q, hdim_v]                                                 = hdims;
-    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str]            = dims_mask;
+    auto [hdims, i_perm, is_v_rowmajor, mode, page_block_size, dims_mask, qscale_str] = GetParam();
+    auto [hdim_q, hdim_v]                                                             = hdims;
+    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str]                        = dims_mask;
 
     auto result = fmha_fwd_run<DataTypeConfig>(mode,
                                                batch,
@@ -669,7 +682,8 @@ class SplitKV : public TestWithParam<std::tuple<std::tuple<int, int>,
                                                 bool,
                                                 std::tuple<mode_enum, bool>,
                                                 int,
-                                                std::tuple<int, int, int, int, int, std::string>>>
+                                                std::tuple<int, int, int, int, int, std::string>,
+                                                std::string>>
 {
 };
 
@@ -686,12 +700,18 @@ INSTANTIATE_TEST_SUITE_P(TestCkTileFmhaFwd,
                                  Values(3, 4),
                                  Values(std::tuple{4, 3, 1, 200, 1024, "0"},
                                         std::tuple{2, 2, -1, 512, 2000, "0"},
-                                        std::tuple{3, 2, -1, 230, 899, "t:128,128"})));
+                                        std::tuple{3, 2, -1, 230, 899, "t:128,128"}),
+                                 QscaleStrValues));
 
 TEST_P(SplitKV, DataTypeConfig)
 {
-    auto [hdims, i_perm, is_v_rowmajor, mode_use_cache_batch_idx, num_splits, dims_mask] =
-        GetParam();
+    auto [hdims,
+          i_perm,
+          is_v_rowmajor,
+          mode_use_cache_batch_idx,
+          num_splits,
+          dims_mask,
+          qscale_str]                                          = GetParam();
     auto [hdim_q, hdim_v]                                      = hdims;
     auto [mode, use_cache_batch_idx]                           = mode_use_cache_batch_idx;
     auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str] = dims_mask;
@@ -740,7 +760,8 @@ class AppendKV : public TestWithParam<std::tuple<std::tuple<int, int>,
                                                  bool,
                                                  std::tuple<int, bool>,
                                                  int,
-                                                 std::tuple<int, int, int, int, int, std::string>>>
+                                                 std::tuple<int, int, int, int, int, std::string>,
+                                                 std::string>>
 {
 };
 
@@ -755,7 +776,8 @@ INSTANTIATE_TEST_SUITE_P(
             Values(std::tuple{3, 3, -1, 60, 129, "t:32,32"},
                    std::tuple{3, 2, 2, 256, 256, "0"},
                    std::tuple{2, 3, 1, 264, 265, "1"},
-                   std::tuple{4, 4, 2, 71, 64, "1"})));
+                   std::tuple{4, 4, 2, 71, 64, "1"}),
+            QscaleStrValues));
 
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(AppendKV);
 
@@ -766,7 +788,8 @@ TEST_P(AppendKV, DataTypeConfig)
           is_v_rowmajor,
           page_block_size_use_cache_batch_idx,
           seqlen_knew,
-          dims_mask]                            = GetParam();
+          dims_mask,
+          qscale_str]                           = GetParam();
     auto [hdim_q, hdim_v]                       = hdims;
     auto [page_block_size, use_cache_batch_idx] = page_block_size_use_cache_batch_idx;
     auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str] = dims_mask;
@@ -815,7 +838,8 @@ class AppendKVRoPE
                                       bool,
                                       std::tuple<int, bool>,
                                       int,
-                                      std::tuple<int, int, int, int, int, std::string>>>
+                                      std::tuple<int, int, int, int, int, std::string>,
+                                      std::string>>
 {
 };
 
@@ -834,14 +858,15 @@ INSTANTIATE_TEST_SUITE_P(TestCkTileFmhaFwd,
                                  Values(16, 50, -1),
                                  Values(std::tuple{2, 3, -1, 60, 129, "t:32,32"},
                                         std::tuple{1, 2, 1, 128, 55, "0"},
-                                        std::tuple{3, 4, 2, 72, 128, "1"})));
+                                        std::tuple{3, 4, 2, 72, 128, "1"}),
+                                 QscaleStrValues));
 
 TEST_P(AppendKVRoPE, DataTypeConfig)
 {
-    auto [_, hdims, i_perm, is_v_rowmajor, rotary, seqlen_knew, dims_mask] = GetParam();
-    auto [hdim_q, hdim_v]                                                  = hdims;
-    auto [rotary_dim, is_rotary_interleaved]                               = rotary;
-    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str]             = dims_mask;
+    auto [_, hdims, i_perm, is_v_rowmajor, rotary, seqlen_knew, dims_mask, qscale_str] = GetParam();
+    auto [hdim_q, hdim_v]                                                              = hdims;
+    auto [rotary_dim, is_rotary_interleaved]                                           = rotary;
+    auto [batch, nhead, nhead_k, seqlen_q, seqlen_k, mask_str]                         = dims_mask;
 
     rotary_dim  = rotary_dim == -1 ? hdim_q : rotary_dim;
     seqlen_knew = seqlen_knew == -1 ? seqlen_k : seqlen_knew;
@@ -899,7 +924,8 @@ using PaddingParam = std::tuple<mode_enum,        // mode
                                 std::vector<int>, // kv_eff_lens
                                 bool,             // i_perm
                                 bool,             // o_perm
-                                std::string>;     // mask_str
+                                std::string,      // mask_str
+                                std::string>;     // qscale_str
 
 // Ensure headers for containers / algorithms used in padding param builder.
 #include <vector>
@@ -1005,7 +1031,8 @@ static std::vector<PaddingParam> BuildPaddingParams()
                                                          kv_eff,
                                                          true,
                                                          true,
-                                                         mask});
+                                                         mask,
+                                                         "n"}); // default qscale
                     }
                 }
                 // Single-token logical length case (both q & k = 1)
@@ -1024,7 +1051,8 @@ static std::vector<PaddingParam> BuildPaddingParams()
                                                      kv_eff,
                                                      true,
                                                      true,
-                                                     mask});
+                                                     mask,
+                                                     "n"}); // default qscale
                 }
             }
         }
@@ -1072,7 +1100,8 @@ static std::vector<PaddingParam> BuildPaddingParams()
                                                                  {},
                                                                  true,
                                                                  true,
-                                                                 mask});
+                                                                 mask,
+                                                                 "n"}); // default qscale
                             }
                         }
                     }
@@ -1094,14 +1123,26 @@ static std::vector<PaddingParam> BuildPaddingParams()
                                                          {},
                                                          true,
                                                          true,
-                                                         mask});
+                                                         mask,
+                                                         "n"}); // default qscale
                     }
                 }
             }
         }
     }
 
-    return params;
+    // Generate variants for different qscale values
+    std::vector<PaddingParam> final_params;
+    for(const auto& qscale : TestConfigs<DataTypeConfig>::QscaleStrValues)
+    {
+        for(auto p : params)
+        {
+            std::get<13>(p) = qscale;
+            final_params.push_back(p);
+        }
+    }
+
+    return final_params;
 }
 
 static const std::vector<PaddingParam> kPaddingParams = BuildPaddingParams();
@@ -1127,7 +1168,8 @@ TEST_P(PaddingCases, DataTypeConfig)
           kv_eff_lens,
           i_perm,
           o_perm,
-          mask_str] = GetParam();
+          mask_str,
+          qscale_str] = GetParam();
 
     // For batch mode we wrap single logical lengths with adjust_seqlen.
     std::vector<int> adj_qs =
