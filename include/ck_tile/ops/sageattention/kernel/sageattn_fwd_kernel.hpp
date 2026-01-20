@@ -72,6 +72,76 @@ struct SageAttnFwdKernel
 #endif
     static constexpr std::string_view kPipelineName = SageAttnPipeline::name;
 
+    // Type to string converter for kernel name generation
+    template <typename>
+    struct t2s;
+    // clang-format off
+    template <> struct t2s<float> { static constexpr const char * name = "fp32"; };
+    template <> struct t2s<ck_tile::fp16_t> { static constexpr const char * name = "fp16"; };
+    template <> struct t2s<ck_tile::bf16_t> { static constexpr const char * name = "bf16"; };
+    template <> struct t2s<ck_tile::fp8_t> { static constexpr const char * name = "fp8"; };
+    template <> struct t2s<ck_tile::bf8_t> { static constexpr const char * name = "bf8"; };
+    // clang-format on
+
+    CK_TILE_HOST static std::string GetName()
+    {
+        // sync with codegen/ops/sageattn_fwd.py
+        // clang-format off
+        using bfs  = typename SageAttnPipeline::BlockFmhaShape;
+        using gbr0 = typename bfs::Gemm0BlockWarps;
+        using gbr1 = typename bfs::Gemm1BlockWarps;
+        using gwt0 = typename bfs::Gemm0WarpTile;
+        using gwt1 = typename bfs::Gemm1WarpTile;
+        
+        #define _SS_  std::string
+        #define _TS_  std::to_string
+        
+        auto pn = [&] () {
+            std::string n;
+            if (kPadSeqLenQ) n += "s";
+            if (kPadSeqLenK) n += "sk";
+            if (kPadHeadDimQ) n += "d";
+            if (kPadHeadDimV) n += "dv";
+            return n.empty() ? n : std::string("p") + n;
+        }();
+        
+        std::string pipeline_str = std::string(kPipelineName);
+        
+        auto name = 
+            _SS_("sageattn_fwd_d") + _TS_(bfs::kQKHeaddim) + "_" + _SS_(t2s<QDataType>::name) + "_" +
+            (kIsGroupMode ? "group" : "batch") + "_" +
+            "b" + _TS_(bfs::kM0) + "x" + _TS_(bfs::kN0) + "x" + _TS_(bfs::kK0) + "x" +
+                  _TS_(bfs::kN1) + "x" + _TS_(bfs::kK1) + "x" + _TS_(bfs::kK0BlockMax) + "_" +
+            "r" + _TS_(gbr0::at(ck_tile::number<0>{})) + "x" + 
+                  _TS_(gbr0::at(ck_tile::number<1>{})) + "x" + 
+                  _TS_(gbr0::at(ck_tile::number<2>{})) + "_" +
+            "r" + _TS_(gbr1::at(ck_tile::number<0>{})) + "x" + 
+                  _TS_(gbr1::at(ck_tile::number<1>{})) + "x" + 
+                  _TS_(gbr1::at(ck_tile::number<2>{})) + "_" +
+            "w" + _TS_(gwt0::at(ck_tile::number<0>{})) + "x" + 
+                  _TS_(gwt0::at(ck_tile::number<1>{})) + "x" + 
+                  _TS_(gwt0::at(ck_tile::number<2>{})) + "_" +
+            "w" + _TS_(gwt1::at(ck_tile::number<0>{})) + "x" + 
+                  _TS_(gwt1::at(ck_tile::number<1>{})) + "x" + 
+                  _TS_(gwt1::at(ck_tile::number<2>{})) + "_" +
+            pipeline_str + "_" +
+            "v" + (std::is_same_v<VLayout, ck_tile::tensor_layout::gemm::RowMajor> ? "r" : "c") + 
+            (pn.empty() ? "" : "_" + pn) +
+            "_nlogits" +
+            (BiasEnum == BlockAttentionBiasEnum::NO_BIAS ? "_nbias" :
+             BiasEnum == BlockAttentionBiasEnum::ALIBI ? "_alibi" : "_bias") +
+            (kHasMask ? "_mask" : "_nmask") +
+            "_nlse" +
+            (kSkipMinSeqlenQ ? "_skip" : "_nskip") +
+            (QScaleEnum == BlockAttentionQuantScaleEnum::NO_SCALE ? "_nqscale" : "_pertensor") +
+            (kUseTrLoad ? "_trload" : "_ntrload");
+        
+        #undef _SS_
+        #undef _TS_
+        // clang-format on
+        return name;
+    }
+
     template <ck_tile::index_t I> // to avoid duplicated base class prblem, introduce an template
                                   // arg
     struct SageAttnFwdEmptyKargs
