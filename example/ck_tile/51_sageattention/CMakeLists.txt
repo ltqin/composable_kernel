@@ -18,32 +18,32 @@ file(GLOB_RECURSE CODE_GEN_SCRIPTS CONFIGURE_DEPENDS
 )
 set_directory_properties(PROPERTIES CMAKE_CONFIGURE_DEPENDS "${CODE_GEN_SCRIPTS}")
 
-list(JOIN INST_TARGETS , SAGEATTENTION_TARGETS_ARG)
+list(JOIN INST_TARGETS , SAGEATTN_TARGETS_ARG)
 
 # Only generate FWD API, only common head dimensions (64, 128)
-set(SAGEATTENTION_FWD_CODE_GEN_COMMON_ARGS
+set(SAGEATTN_FWD_CODE_GEN_COMMON_ARGS
   ${CMAKE_CURRENT_LIST_DIR}/generate.py
-  --targets ${SAGEATTENTION_TARGETS_ARG}
-  --api sageattention_fwd
+  --targets ${SAGEATTN_TARGETS_ARG}
+  --api sageattn_fwd
   --optdim 64,128
 )
 
 # Generate list of kernels to build
 execute_process(
-  COMMAND ${Python3_EXECUTABLE} ${SAGEATTENTION_FWD_CODE_GEN_COMMON_ARGS}
-  --list_blobs ${CMAKE_CURRENT_BINARY_DIR}/sageattention_fwd_blob_list.txt
+  COMMAND ${Python3_EXECUTABLE} ${SAGEATTN_FWD_CODE_GEN_COMMON_ARGS}
+  --list_blobs ${CMAKE_CURRENT_BINARY_DIR}/sageattn_fwd_blob_list.txt
   RESULT_VARIABLE ret
 )
 if(ret AND NOT ret EQUAL 0)
   message(FATAL_ERROR "SageAttention FAILED to generate kernel list via Python.")
 endif()
 
-file(STRINGS ${CMAKE_CURRENT_BINARY_DIR}/sageattention_fwd_blob_list.txt SAGEATTENTION_FWD_GEN_BLOBS)
+file(STRINGS ${CMAKE_CURRENT_BINARY_DIR}/sageattn_fwd_blob_list.txt SAGEATTN_FWD_GEN_BLOBS)
 
 # Generate the kernel instance files
 add_custom_command(
-  OUTPUT ${SAGEATTENTION_FWD_GEN_BLOBS}
-  COMMAND ${Python3_EXECUTABLE} ${SAGEATTENTION_FWD_CODE_GEN_COMMON_ARGS}
+  OUTPUT ${SAGEATTN_FWD_GEN_BLOBS}
+  COMMAND ${Python3_EXECUTABLE} ${SAGEATTN_FWD_CODE_GEN_COMMON_ARGS}
   --output_dir ${CMAKE_CURRENT_BINARY_DIR}
   DEPENDS ${CODE_GEN_SCRIPTS}
   COMMENT "Generate SageAttention FWD kernels"
@@ -51,60 +51,60 @@ add_custom_command(
 )
 
 # Build the kernel instances library
-add_library(tile_sageattention_fwd_instances OBJECT ${SAGEATTENTION_FWD_GEN_BLOBS})
-target_include_directories(tile_sageattention_fwd_instances PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+add_library(tile_sageattn_fwd_instances OBJECT ${SAGEATTN_FWD_GEN_BLOBS})
+target_include_directories(tile_sageattn_fwd_instances PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
 # Compile options for kernel instances
-set(SAGEATTENTION_FWD_INSTANCE_COMPILE_OPTIONS)
-list(APPEND SAGEATTENTION_FWD_INSTANCE_COMPILE_OPTIONS -Wno-undefined-func-template)
-list(APPEND SAGEATTENTION_FWD_INSTANCE_COMPILE_OPTIONS -Wno-float-equal)
-list(APPEND SAGEATTENTION_FWD_INSTANCE_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_API=1)
+set(SAGEATTN_FWD_INSTANCE_COMPILE_OPTIONS)
+list(APPEND SAGEATTN_FWD_INSTANCE_COMPILE_OPTIONS -Wno-undefined-func-template)
+list(APPEND SAGEATTN_FWD_INSTANCE_COMPILE_OPTIONS -Wno-float-equal)
+list(APPEND SAGEATTN_FWD_INSTANCE_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_API=1)
 
-if(NOT DEFINED SAGEATTENTION_FWD_FAST_EXP2)
-  set(SAGEATTENTION_FWD_FAST_EXP2 ON)
+if(NOT DEFINED SAGEATTN_FWD_FAST_EXP2)
+  set(SAGEATTN_FWD_FAST_EXP2 ON)
 endif()
 
-if(SAGEATTENTION_FWD_FAST_EXP2)
-  list(APPEND SAGEATTENTION_FWD_INSTANCE_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_FAST_EXP2=1 -fgpu-flush-denormals-to-zero)
+if(SAGEATTN_FWD_FAST_EXP2)
+  list(APPEND SAGEATTN_FWD_INSTANCE_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_FAST_EXP2=1 -fgpu-flush-denormals-to-zero)
 else()
-  list(APPEND SAGEATTENTION_FWD_INSTANCE_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_FAST_EXP2=0)
+  list(APPEND SAGEATTN_FWD_INSTANCE_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_FAST_EXP2=0)
 endif()
 
 if(CK_USE_OCP_FP8)
-  list(APPEND SAGEATTENTION_FWD_INSTANCE_COMPILE_OPTIONS -DCK_TILE_USE_OCP_FP8)
+  list(APPEND SAGEATTN_FWD_INSTANCE_COMPILE_OPTIONS -DCK_TILE_USE_OCP_FP8)
 endif()
 
-target_compile_options(tile_sageattention_fwd_instances PRIVATE ${SAGEATTENTION_FWD_INSTANCE_COMPILE_OPTIONS})
-set_property(TARGET tile_sageattention_fwd_instances PROPERTY HIP_ARCHITECTURES ${INST_TARGETS})
-set_property(TARGET tile_sageattention_fwd_instances PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_compile_options(tile_sageattn_fwd_instances PRIVATE ${SAGEATTN_FWD_INSTANCE_COMPILE_OPTIONS})
+set_property(TARGET tile_sageattn_fwd_instances PROPERTY HIP_ARCHITECTURES ${INST_TARGETS})
+set_property(TARGET tile_sageattn_fwd_instances PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # ====================================================================
 # SageAttention FWD Example
 # ====================================================================
-set(EXAMPLE_SAGEATTENTION_FWD "tile_example_sageattention_fwd")
+set(EXAMPLE_SAGEATTN_FWD "tile_example_sageattn_fwd")
 
-message(DEBUG "adding example ${EXAMPLE_SAGEATTENTION_FWD}")
+message(DEBUG "adding example ${EXAMPLE_SAGEATTN_FWD}")
 
-add_executable(${EXAMPLE_SAGEATTENTION_FWD} EXCLUDE_FROM_ALL example_sageattention_fwd.cpp)
-target_include_directories(${EXAMPLE_SAGEATTENTION_FWD} PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+add_executable(${EXAMPLE_SAGEATTN_FWD} EXCLUDE_FROM_ALL example_sageattn_fwd.cpp)
+target_include_directories(${EXAMPLE_SAGEATTN_FWD} PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
 # Link with our own minimal instances library (INDEPENDENT from FMHA!)
-target_link_libraries(${EXAMPLE_SAGEATTENTION_FWD} tile_sageattention_fwd_instances)
+target_link_libraries(${EXAMPLE_SAGEATTN_FWD} tile_sageattn_fwd_instances)
 
-set(SAGEATTENTION_FWD_COMPILE_OPTIONS)
-list(APPEND SAGEATTENTION_FWD_COMPILE_OPTIONS -Wno-undefined-func-template)
-list(APPEND SAGEATTENTION_FWD_COMPILE_OPTIONS -Wno-float-equal)
-list(APPEND SAGEATTENTION_FWD_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_API=1)
+set(SAGEATTN_FWD_COMPILE_OPTIONS)
+list(APPEND SAGEATTN_FWD_COMPILE_OPTIONS -Wno-undefined-func-template)
+list(APPEND SAGEATTN_FWD_COMPILE_OPTIONS -Wno-float-equal)
+list(APPEND SAGEATTN_FWD_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_API=1)
 
-if(SAGEATTENTION_FWD_FAST_EXP2)
-  list(APPEND SAGEATTENTION_FWD_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_FAST_EXP2=1 -fgpu-flush-denormals-to-zero)
+if(SAGEATTN_FWD_FAST_EXP2)
+  list(APPEND SAGEATTN_FWD_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_FAST_EXP2=1 -fgpu-flush-denormals-to-zero)
 else()
-  list(APPEND SAGEATTENTION_FWD_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_FAST_EXP2=0)
+  list(APPEND SAGEATTN_FWD_COMPILE_OPTIONS -DCK_TILE_FMHA_FWD_FAST_EXP2=0)
 endif()
 
 if(CK_USE_OCP_FP8)
-  list(APPEND SAGEATTENTION_FWD_COMPILE_OPTIONS -DCK_TILE_USE_OCP_FP8)
+  list(APPEND SAGEATTN_FWD_COMPILE_OPTIONS -DCK_TILE_USE_OCP_FP8)
 endif()
 
-target_compile_options(${EXAMPLE_SAGEATTENTION_FWD} PRIVATE ${SAGEATTENTION_FWD_COMPILE_OPTIONS})
-set_property(TARGET ${EXAMPLE_SAGEATTENTION_FWD} PROPERTY HIP_ARCHITECTURES ${INST_TARGETS})
+target_compile_options(${EXAMPLE_SAGEATTN_FWD} PRIVATE ${SAGEATTN_FWD_COMPILE_OPTIONS})
+set_property(TARGET ${EXAMPLE_SAGEATTN_FWD} PROPERTY HIP_ARCHITECTURES ${INST_TARGETS})

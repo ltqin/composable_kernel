@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "ck_tile/host.hpp"
-#include "sageattention_fwd.hpp"
-#include "sageattention_fwd_runner.hpp"
+#include "sageattn_fwd.hpp"
+#include "sageattn_fwd_runner.hpp"
 
 #include <string>
 
