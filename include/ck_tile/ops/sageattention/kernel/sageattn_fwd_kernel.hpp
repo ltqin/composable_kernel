@@ -127,11 +127,9 @@ struct SageAttnFwdKernel
             pipeline_str + "_" +
             "v" + (std::is_same_v<VLayout, ck_tile::tensor_layout::gemm::RowMajor> ? "r" : "c") + 
             (pn.empty() ? "" : "_" + pn) +
-            "_nlogits" +
             (BiasEnum == BlockAttentionBiasEnum::NO_BIAS ? "_nbias" :
              BiasEnum == BlockAttentionBiasEnum::ALIBI ? "_alibi" : "_bias") +
             (kHasMask ? "_mask" : "_nmask") +
-            "_nlse" +
             (kSkipMinSeqlenQ ? "_skip" : "_nskip") +
             (QScaleEnum == BlockAttentionQuantScaleEnum::NO_SCALE ? "_nqscale" : "_pertensor") +
             (kUseTrLoad ? "_trload" : "_ntrload");

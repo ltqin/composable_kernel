@@ -390,8 +390,6 @@ class SageAttnFwdPipeline:
         else:
             n += "_npad"
 
-        n += "_nlogits"  # logits is always false
-
         if self.F_bias != "no":
             n += f"_{self.F_bias}"
         else:
@@ -407,8 +405,6 @@ class SageAttnFwdPipeline:
                 n += f"_m{self.F_mask[0]}"
             else:
                 n += "_nmask"
-
-        n += "_nlse"
 
         if self.F_skip == "t":
             n += "_skip"
