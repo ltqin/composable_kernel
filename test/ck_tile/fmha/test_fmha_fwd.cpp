@@ -37,11 +37,11 @@ struct TestConfigs
     };
     static constexpr auto AppendKVHDimValues = std::array{
         std::tuple{32, -1}, std::tuple{64, -1}, std::tuple{128, -1}, std::tuple{256, -1}};
-    static constexpr auto ModeValues        = std::array{mode_enum::batch, mode_enum::group};
-    static constexpr auto IsVRowmajorValues = std::array{true};
-    static constexpr auto QscaleStrValues   = std::array{"n"};
-    static constexpr bool def_lse           = true;
-    static constexpr bool def_is_v_rowmajor = true;
+    static constexpr auto ModeValues         = std::array{mode_enum::batch, mode_enum::group};
+    static constexpr auto IsVRowmajorValues  = std::array{true};
+    static inline const auto QscaleStrValues = std::array<std::string, 1>{"n"};
+    static constexpr bool def_lse            = true;
+    static constexpr bool def_is_v_rowmajor  = true;
     static int adjust_seqlen(int seqlen) { return seqlen; }
 };
 
@@ -54,7 +54,7 @@ struct TestConfigs<FmhaFwdFp8Bf16>
     static constexpr auto AppendKVHDimValues = std::array{std::tuple{64, -1}, std::tuple{128, -1}};
     static constexpr auto ModeValues         = std::array{mode_enum::batch, mode_enum::group};
     static constexpr auto IsVRowmajorValues  = std::array{true};
-    static constexpr auto QscaleStrValues    = std::array{"pt", "bs"};
+    static inline const auto QscaleStrValues = std::array<std::string, 2>{"pt", "bs"};
     static constexpr bool def_lse            = false;
     static constexpr bool def_is_v_rowmajor  = true;
     // When there are no fp8 instances with padding, pad seqlen to avoid skipping most of the tests:
@@ -78,7 +78,7 @@ struct TestConfigs<FmhaFwdFp32>
     static constexpr auto AppendKVHDimValues = std::array<std::tuple<int, int>, 0>{};
     static constexpr auto ModeValues         = std::array{mode_enum::batch, mode_enum::group};
     static constexpr auto IsVRowmajorValues  = std::array{true};
-    static constexpr auto QscaleStrValues    = std::array{"n"};
+    static inline const auto QscaleStrValues = std::array<std::string, 1>{"n"};
     static constexpr bool def_lse            = true;
     static constexpr bool def_is_v_rowmajor  = true;
     static int adjust_seqlen(int seqlen) { return seqlen; }
@@ -93,7 +93,8 @@ static auto QscaleStrValues      = ValuesIn(TestConfigs<DataTypeConfig>::QscaleS
 constexpr bool def_lse           = TestConfigs<DataTypeConfig>::def_lse;
 constexpr bool def_is_v_rowmajor = TestConfigs<DataTypeConfig>::def_is_v_rowmajor;
 int adjust_seqlen(int seqlen) { return TestConfigs<DataTypeConfig>::adjust_seqlen(seqlen); }
-constexpr auto init_method = "uf";
+static const auto def_qscale_str = TestConfigs<DataTypeConfig>::QscaleStrValues[0];
+constexpr auto init_method       = "uf";
 
 // Random seed used for initializing input tensors. 0 for non-deterministic seed
 CK_TILE_DECLARE_ENV_VAR(CK_TILE_TEST_SEED, uint64_t, 123456)
@@ -252,7 +253,7 @@ TEST(TestCkTileFmhaFwd, AppendKvWithBatchEffLensShouldFail)
         0,     // drop_offset
         false, // drop_prefs
         "0",   // mask
-        qscale_str,
+        def_qscale_str,
         true, // is_rotary_interleaved
         1,    // num_splits
         init_method,
@@ -297,7 +298,7 @@ TEST(TestCkTileFmhaFwd, SplitKvWithGroupPaddingShouldFail)
         0,
         false,
         "0",
-        qscale_str,
+        def_qscale_str,
         true,
         2, // num_splits (>1 triggers splitkv)
         init_method,
@@ -341,7 +342,7 @@ TEST(TestCkTileFmhaFwd, PagedKvWithGroupPaddingShouldFail)
         0,
         false,
         "0",
-        qscale_str,
+        def_qscale_str,
         true,
         1,
         init_method,
