@@ -25,7 +25,7 @@ struct MXBlockGemmARegBSmemCRegV2
 
     static constexpr index_t kBlockSize = Problem::kBlockSize;
 
-    // MX packing parameters
+    // MX packing parameters - fixed for MX format (matches hardware OPSEL encoding)
     static constexpr index_t MXdlPack = 2;
     static constexpr index_t NXdlPack = 2;
     static constexpr index_t KXdlPack = 2;
@@ -69,11 +69,6 @@ struct MXBlockGemmARegBSmemCRegV2
 
         constexpr index_t NPerBlockPerIter = NPerBlock / NIterPerWarp;
         constexpr index_t KPerBlockPerIter = KPerBlock / KIterPerWarp;
-
-        // MX pack iteration counts
-        constexpr index_t MPackIterPerWarp = MIterPerWarp / MXdlPack;
-        constexpr index_t NPackIterPerWarp = NIterPerWarp / NXdlPack;
-        constexpr index_t KPackIterPerWarp = KIterPerWarp / KXdlPack;
 
         const index_t iNWarp = get_warp_id() % NWarp;
 
@@ -137,59 +132,53 @@ struct MXBlockGemmARegBSmemCRegV2
         constexpr auto c_warp_y_index_zeros = uniform_sequence_gen_t<CWarpDstr::NDimY, 0>{};
 
         // hot loop with MX scale support:
-        // Iterate over packed dimensions for proper scale indexing
-        static_for<0, KPackIterPerWarp, 1>{}([&](auto ikpack) {
-            static_for<0, NPackIterPerWarp, 1>{}([&](auto inpack) {
-                static_for<0, MPackIterPerWarp, 1>{}([&](auto impack) {
-                    // Inner loops for XDL packing
-                    static_for<0, KXdlPack, 1>{}([&](auto ikxdl) {
-                        static_for<0, NXdlPack, 1>{}([&](auto inxdl) {
-                            static_for<0, MXdlPack, 1>{}([&](auto imxdl) {
-                                constexpr auto kIter = ikpack * KXdlPack + ikxdl;
-                                constexpr auto nIter = inpack * NXdlPack + inxdl;
-                                constexpr auto mIter = impack * MXdlPack + imxdl;
+        // Same 3-layer loop as original, compute pack indices internally
+        static_for<0, KIterPerWarp, 1>{}([&](auto kIter) {
+            static_for<0, NIterPerWarp, 1>{}([&](auto nIter) {
+                // read B warp tensor from B Block window
+                const auto b_warp_tensor = load_tile(b_warp_windows(nIter)(kIter));
 
-                                // Template parameters for WarpGemm
-                                constexpr auto APackIter = ikxdl * MXdlPack + imxdl;
-                                constexpr auto BPackIter = ikxdl * NXdlPack + inxdl;
+                static_for<0, MIterPerWarp, 1>{}([&](auto mIter) {
+                    // Compute pack indices for scale lookup
+                    constexpr auto impack = mIter / number<MXdlPack>{};
+                    constexpr auto inpack = nIter / number<NXdlPack>{};
+                    constexpr auto ikpack = kIter / number<KXdlPack>{};
 
-                                // read B warp tensor from B Block window
-                                const auto b_warp_tensor = load_tile(b_warp_windows(nIter)(kIter));
+                    // Compute indices within pack for OPSEL (hardware fixed 2-bit encoding)
+                    constexpr auto imxdl = mIter % number<MXdlPack>{};
+                    constexpr auto inxdl = nIter % number<NXdlPack>{};
+                    constexpr auto ikxdl = kIter % number<KXdlPack>{};
 
-                                // read A warp tensor from A block tensor
-                                AWarpTensor a_warp_tensor;
-                                a_warp_tensor.get_thread_buffer() =
-                                    a_block_tensor.get_y_sliced_thread_data(
-                                        merge_sequences(sequence<mIter, kIter>{},
-                                                        a_warp_y_index_zeros),
-                                        merge_sequences(sequence<1, 1>{}, a_warp_y_lengths));
+                    // APackIter/BPackIter maps to OPSEL: 0,1,2,3 → select
+                    // VGPR[7:0],[15:8],[23:16],[31:24]
+                    constexpr auto APackIter = ikxdl * MXdlPack + imxdl;
+                    constexpr auto BPackIter = ikxdl * NXdlPack + inxdl;
 
-                                // read C warp tensor from C block tensor
-                                CWarpTensor c_warp_tensor;
-                                c_warp_tensor.get_thread_buffer() =
-                                    c_block_tensor.get_y_sliced_thread_data(
-                                        merge_sequences(sequence<mIter, nIter>{},
-                                                        c_warp_y_index_zeros),
-                                        merge_sequences(sequence<1, 1>{}, c_warp_y_lengths));
+                    // read A warp tensor from A block tensor
+                    AWarpTensor a_warp_tensor;
+                    a_warp_tensor.get_thread_buffer() = a_block_tensor.get_y_sliced_thread_data(
+                        merge_sequences(sequence<mIter, kIter>{}, a_warp_y_index_zeros),
+                        merge_sequences(sequence<1, 1>{}, a_warp_y_lengths));
 
-                                // Get scale values
-                                const auto scale_a =
-                                    scale_a_tensor(impack)(ikpack).get_thread_buffer()[0];
-                                const auto scale_b =
-                                    scale_b_tensor(inpack)(ikpack).get_thread_buffer()[0];
+                    // read C warp tensor from C block tensor
+                    CWarpTensor c_warp_tensor;
+                    c_warp_tensor.get_thread_buffer() = c_block_tensor.get_y_sliced_thread_data(
+                        merge_sequences(sequence<mIter, nIter>{}, c_warp_y_index_zeros),
+                        merge_sequences(sequence<1, 1>{}, c_warp_y_lengths));
 
-                                // warp GEMM with scale
-                                WG{}.template operator()<APackIter, BPackIter>(
-                                    c_warp_tensor, a_warp_tensor, b_warp_tensor, scale_a, scale_b);
+                    // Get scale values (indexed by pack dimensions)
+                    const auto scale_a = scale_a_tensor(impack)(ikpack).get_thread_buffer()[0];
+                    const auto scale_b = scale_b_tensor(inpack)(ikpack).get_thread_buffer()[0];
 
-                                // write C warp tensor into C block tensor
-                                c_block_tensor.set_y_sliced_thread_data(
-                                    merge_sequences(sequence<mIter, nIter>{}, c_warp_y_index_zeros),
-                                    merge_sequences(sequence<1, 1>{}, c_warp_y_lengths),
-                                    c_warp_tensor.get_thread_buffer());
-                            });
-                        });
-                    });
+                    // warp GEMM with scale
+                    WG{}.template operator()<APackIter, BPackIter>(
+                        c_warp_tensor, a_warp_tensor, b_warp_tensor, scale_a, scale_b);
+
+                    // write C warp tensor into C block tensor
+                    c_block_tensor.set_y_sliced_thread_data(
+                        merge_sequences(sequence<mIter, nIter>{}, c_warp_y_index_zeros),
+                        merge_sequences(sequence<1, 1>{}, c_warp_y_lengths),
+                        c_warp_tensor.get_thread_buffer());
                 });
             });
         });
