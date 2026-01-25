@@ -12,7 +12,6 @@
 #include "bias.hpp"
 #include "mask.hpp"
 #include "quant.hpp"
-#include "rotary.hpp"
 
 #include <type_traits>
 #include <utility>
