@@ -41,8 +41,6 @@ struct SageAttnFwdKernel
     using VDataType    = ck_tile::remove_cvref_t<typename SageAttnPipeline::VDataType>;
     using PDataType    = ck_tile::remove_cvref_t<typename SageAttnPipeline::PDataType>;
     using BiasDataType = ck_tile::remove_cvref_t<typename SageAttnPipeline::BiasDataType>;
-    using RandValOutputDataType =
-        ck_tile::remove_cvref_t<typename SageAttnPipeline::RandValOutputDataType>;
     using ODataType    = ck_tile::remove_cvref_t<typename SageAttnPipeline::ODataType>;
     using SaccDataType = ck_tile::remove_cvref_t<typename SageAttnPipeline::SaccDataType>;
 

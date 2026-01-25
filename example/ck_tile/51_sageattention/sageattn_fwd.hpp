@@ -51,119 +51,123 @@ struct SageAttentionFwdFp8Fp32
 {
 };
 
+struct SageAttentionFwdFp4Bf16
+{
+};
+
 template <typename DataType>
 struct SageAttentionFwdTypeConfig;
 
 template <>
 struct SageAttentionFwdTypeConfig<SageAttentionFwdFp32>
 {
-    using QDataType             = float;
-    using KDataType             = float;
-    using VDataType             = float;
-    using BiasDataType          = float;
-    using RandValOutputDataType = uint8_t;
-    using LSEDataType           = float; // data type for lse(logsumexp L_j = max_j + log(l_j))
-    using SaccDataType          = float; // data type for first gemm accumulation
-    using SMPLComputeDataType   = float; // data type for reduction, softmax
-    using PDataType             = float; // data type for A matrix of second gemm
-    using OaccDataType          = float; // data type for second gemm accumulation
-    using ODataType             = float;
+    using QDataType           = float;
+    using KDataType           = float;
+    using VDataType           = float;
+    using BiasDataType        = float;
+    using SaccDataType        = float; // data type for first gemm accumulation
+    using SMPLComputeDataType = float; // data type for reduction, softmax
+    using PDataType           = float; // data type for A matrix of second gemm
+    using OaccDataType        = float; // data type for second gemm accumulation
+    using ODataType           = float;
 };
 
 template <>
 struct SageAttentionFwdTypeConfig<SageAttentionFwdFp16>
 {
-    using QDataType             = ck_tile::half_t;
-    using KDataType             = ck_tile::half_t;
-    using VDataType             = ck_tile::half_t;
-    using BiasDataType          = ck_tile::half_t;
-    using RandValOutputDataType = uint8_t;
-    using LSEDataType           = float; // data type for lse(logsumexp L_j = max_j + log(l_j))
-    using SaccDataType          = float; // data type for first gemm accumulation
-    using SMPLComputeDataType   = float; // data type for reduction, softmax
-    using PDataType             = ck_tile::half_t; // data type for A matrix of second gemm
-    using OaccDataType          = float;           // data type for second gemm accumulation
-    using ODataType             = ck_tile::half_t;
+    using QDataType           = ck_tile::half_t;
+    using KDataType           = ck_tile::half_t;
+    using VDataType           = ck_tile::half_t;
+    using BiasDataType        = ck_tile::half_t;
+    using SaccDataType        = float;           // data type for first gemm accumulation
+    using SMPLComputeDataType = float;           // data type for reduction, softmax
+    using PDataType           = ck_tile::half_t; // data type for A matrix of second gemm
+    using OaccDataType        = float;           // data type for second gemm accumulation
+    using ODataType           = ck_tile::half_t;
 };
 
 template <>
 struct SageAttentionFwdTypeConfig<SageAttentionFwdBf16>
 {
-    using QDataType             = ck_tile::bf16_t;
-    using KDataType             = ck_tile::bf16_t;
-    using VDataType             = ck_tile::bf16_t;
-    using BiasDataType          = ck_tile::bf16_t;
-    using RandValOutputDataType = uint8_t;
-    using LSEDataType           = float; // data type for lse(logsumexp L_j = max_j + log(l_j))
-    using SaccDataType          = float; // data type for first gemm accumulation
-    using SMPLComputeDataType   = float; // data type for reduction, softmax
-    using PDataType             = ck_tile::bf16_t; // data type for A matrix of second gemm
-    using OaccDataType          = float;           // data type for second gemm accumulation
-    using ODataType             = ck_tile::bf16_t;
+    using QDataType           = ck_tile::bf16_t;
+    using KDataType           = ck_tile::bf16_t;
+    using VDataType           = ck_tile::bf16_t;
+    using BiasDataType        = ck_tile::bf16_t;
+    using SaccDataType        = float;           // data type for first gemm accumulation
+    using SMPLComputeDataType = float;           // data type for reduction, softmax
+    using PDataType           = ck_tile::bf16_t; // data type for A matrix of second gemm
+    using OaccDataType        = float;           // data type for second gemm accumulation
+    using ODataType           = ck_tile::bf16_t;
 };
 
 template <>
 struct SageAttentionFwdTypeConfig<SageAttentionFwdFp8>
 {
-    using QDataType             = ck_tile::fp8_t;
-    using KDataType             = ck_tile::fp8_t;
-    using VDataType             = ck_tile::fp8_t;
-    using BiasDataType          = float;
-    using RandValOutputDataType = uint8_t;
-    using LSEDataType           = float; // data type for lse(logsumexp L_j = max_j + log(l_j))
-    using SaccDataType          = float; // data type for first gemm accumulation
-    using SMPLComputeDataType   = float; // data type for reduction, softmax
-    using PDataType             = ck_tile::fp8_t; // data type for A matrix of second gemm
-    using OaccDataType          = float;          // data type for second gemm accumulation
-    using ODataType             = ck_tile::fp8_t;
+    using QDataType           = ck_tile::fp8_t;
+    using KDataType           = ck_tile::fp8_t;
+    using VDataType           = ck_tile::fp8_t;
+    using BiasDataType        = float;
+    using SaccDataType        = float;          // data type for first gemm accumulation
+    using SMPLComputeDataType = float;          // data type for reduction, softmax
+    using PDataType           = ck_tile::fp8_t; // data type for A matrix of second gemm
+    using OaccDataType        = float;          // data type for second gemm accumulation
+    using ODataType           = ck_tile::fp8_t;
 };
 
 template <>
 struct SageAttentionFwdTypeConfig<SageAttentionFwdBf8>
 {
-    using QDataType             = ck_tile::bf8_t;
-    using KDataType             = ck_tile::bf8_t;
-    using VDataType             = ck_tile::bf8_t;
-    using BiasDataType          = ck_tile::bf8_t;
-    using RandValOutputDataType = uint8_t;
-    using LSEDataType           = float; // data type for lse(logsumexp L_j = max_j + log(l_j))
-    using SaccDataType          = float; // data type for first gemm accumulation
-    using SMPLComputeDataType   = float; // data type for reduction, softmax
-    using PDataType             = ck_tile::bf8_t; // data type for A matrix of second gemm
-    using OaccDataType          = float;          // data type for second gemm accumulation
-    using ODataType             = ck_tile::bf8_t;
+    using QDataType           = ck_tile::bf8_t;
+    using KDataType           = ck_tile::bf8_t;
+    using VDataType           = ck_tile::bf8_t;
+    using BiasDataType        = ck_tile::bf8_t;
+    using SaccDataType        = float;          // data type for first gemm accumulation
+    using SMPLComputeDataType = float;          // data type for reduction, softmax
+    using PDataType           = ck_tile::bf8_t; // data type for A matrix of second gemm
+    using OaccDataType        = float;          // data type for second gemm accumulation
+    using ODataType           = ck_tile::bf8_t;
 };
 
 template <>
 struct SageAttentionFwdTypeConfig<SageAttentionFwdFp8Bf16>
 {
-    using QDataType             = ck_tile::fp8_t;
-    using KDataType             = ck_tile::fp8_t;
-    using VDataType             = ck_tile::fp8_t;
-    using BiasDataType          = float;
-    using RandValOutputDataType = uint8_t;
-    using LSEDataType           = float; // data type for lse(logsumexp L_j = max_j + log(l_j))
-    using SaccDataType          = float; // data type for first gemm accumulation
-    using SMPLComputeDataType   = float; // data type for reduction, softmax
-    using PDataType             = ck_tile::fp8_t; // data type for A matrix of second gemm
-    using OaccDataType          = float;          // data type for second gemm accumulation
-    using ODataType             = ck_tile::bf16_t;
+    using QDataType           = ck_tile::fp8_t;
+    using KDataType           = ck_tile::fp8_t;
+    using VDataType           = ck_tile::fp8_t;
+    using BiasDataType        = float;
+    using SaccDataType        = float;          // data type for first gemm accumulation
+    using SMPLComputeDataType = float;          // data type for reduction, softmax
+    using PDataType           = ck_tile::fp8_t; // data type for A matrix of second gemm
+    using OaccDataType        = float;          // data type for second gemm accumulation
+    using ODataType           = ck_tile::bf16_t;
 };
 
 template <>
 struct SageAttentionFwdTypeConfig<SageAttentionFwdFp8Fp32>
 {
-    using QDataType             = ck_tile::fp8_t;
-    using KDataType             = ck_tile::fp8_t;
-    using VDataType             = ck_tile::fp8_t;
-    using BiasDataType          = float;
-    using RandValOutputDataType = uint8_t;
-    using LSEDataType           = float; // data type for lse(logsumexp L_j = max_j + log(l_j))
-    using SaccDataType          = float; // data type for first gemm accumulation
-    using SMPLComputeDataType   = float; // data type for reduction, softmax
-    using PDataType             = ck_tile::fp8_t; // data type for A matrix of second gemm
-    using OaccDataType          = float;          // data type for second gemm accumulation
-    using ODataType             = float;
+    using QDataType           = ck_tile::fp8_t;
+    using KDataType           = ck_tile::fp8_t;
+    using VDataType           = ck_tile::fp8_t;
+    using BiasDataType        = float;
+    using SaccDataType        = float;          // data type for first gemm accumulation
+    using SMPLComputeDataType = float;          // data type for reduction, softmax
+    using PDataType           = ck_tile::fp8_t; // data type for A matrix of second gemm
+    using OaccDataType        = float;          // data type for second gemm accumulation
+    using ODataType           = float;
+};
+
+template <>
+struct SageAttentionFwdTypeConfig<SageAttentionFwdFp4Bf16>
+{
+    using QDataType           = ck_tile::pk_fp4_t;
+    using KDataType           = ck_tile::pk_fp4_t;
+    using VDataType           = ck_tile::bf16_t; // V stays in BF16
+    using BiasDataType        = float;
+    using SaccDataType        = float;           // data type for first gemm accumulation
+    using SMPLComputeDataType = float;           // data type for reduction, softmax
+    using PDataType           = ck_tile::bf16_t; // P also in BF16 for 2nd gemm
+    using OaccDataType        = float;           // data type for second gemm accumulation
+    using ODataType           = ck_tile::bf16_t;
 };
 
 struct FmhaMasks
@@ -183,7 +187,6 @@ struct sageattn_fwd_args
     const void* q_descale_ptr;
     const void* k_descale_ptr;
     const void* v_descale_ptr;
-    void* rand_val_ptr;
     void* lse_ptr;
     void* o_ptr;
 

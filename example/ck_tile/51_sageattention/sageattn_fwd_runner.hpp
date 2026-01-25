@@ -378,17 +378,15 @@ fwd_result sageattn_fwd_run(mode_enum mode,
 
     using TypeConfig = SageAttentionFwdTypeConfig<DataTypeConfig>;
 
-    using QDataType             = typename TypeConfig::QDataType;
-    using KDataType             = typename TypeConfig::KDataType;
-    using VDataType             = typename TypeConfig::VDataType;
-    using BiasDataType          = typename TypeConfig::BiasDataType;
-    using RandValOutputDataType = typename TypeConfig::RandValOutputDataType;
-    using LSEDataType           = typename TypeConfig::LSEDataType;
-    using SaccDataType          = typename TypeConfig::SaccDataType;
-    using SMPLComputeDataType   = typename TypeConfig::SMPLComputeDataType;
-    using PDataType             = typename TypeConfig::PDataType;
-    using OaccDataType          = typename TypeConfig::OaccDataType;
-    using ODataType             = typename TypeConfig::ODataType;
+    using QDataType           = typename TypeConfig::QDataType;
+    using KDataType           = typename TypeConfig::KDataType;
+    using VDataType           = typename TypeConfig::VDataType;
+    using BiasDataType        = typename TypeConfig::BiasDataType;
+    using SaccDataType        = typename TypeConfig::SaccDataType;
+    using SMPLComputeDataType = typename TypeConfig::SMPLComputeDataType;
+    using PDataType           = typename TypeConfig::PDataType;
+    using OaccDataType        = typename TypeConfig::OaccDataType;
+    using ODataType           = typename TypeConfig::ODataType;
 
     // accumulation numbers for performance evaluation
     std::size_t flop = 0, num_byte = 0;
@@ -500,7 +498,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     auto [rotary_cos_host, rotary_sin_host] = generate_rotary_cos_sin<KDataType>(
         std::max(shape_seqlen_q, shape_seqlen_k), rotary_dim, next_seed());
 
-    ck_tile::HostTensor<LSEDataType> lse_acc_host(
+    ck_tile::HostTensor<float> lse_acc_host(
         1 < num_splits || use_kvcache
             ? std::array<ck_tile::index_t, 4>{shape_batch, nhead, num_splits, shape_seqlen_q}
             : std::array<ck_tile::index_t, 4>{1, 1, 1, 1});
@@ -519,15 +517,12 @@ fwd_result sageattn_fwd_run(mode_enum mode,
 
     // batch mode of lse data layout is [batch, nhead, seqlen_q]
     // group mode of lse data layout is [nhead, total_seqlen_q]
-    ck_tile::HostTensor<LSEDataType> lse_host(
+    ck_tile::HostTensor<float> lse_host(
         lse ? std::array<ck_tile::index_t, 3>{shape_batch, nhead, shape_seqlen_q}
             : std::array<ck_tile::index_t, 3>{1, 1, 1} /* dummy shape for simplifying code */);
 
     ck_tile::HostTensor<ODataType> o_host(
         get_lengths(o_perm, shape_batch, nhead, shape_seqlen_q, hdim_v));
-
-    ck_tile::HostTensor<RandValOutputDataType> randval_host(
-        std::array<ck_tile::index_t, 4>{1, 1, 1, 1});
 
     ck_tile::HostTensor<int32_t> block_table_host(
         0 < page_block_size ? std::array<ck_tile::index_t, 2>{batch, max_num_page_blocks / batch}
@@ -669,7 +664,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     ck_tile::DeviceMem cache_seqlen_k_buf(0); // appendkv not supported
     ck_tile::DeviceMem rotary_cos_buf(rotary_cos_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem rotary_sin_buf(rotary_sin_host.get_element_space_size_in_bytes());
-    ck_tile::DeviceMem randval_buf(randval_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem alibi_slope_buf(alibi_slope_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem block_table_buf(block_table_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem cache_batch_idx_buf(cache_batch_idx_host.get_element_space_size_in_bytes());
@@ -879,8 +873,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         args.k_descale_ptr = k_descale_buf.GetDeviceBuffer();
         args.v_descale_ptr = v_descale_buf.GetDeviceBuffer();
 
-        args.rand_val_ptr = randval_buf.GetDeviceBuffer();
-
         // Sequence length and padding parameters (mode-specific)
         if(mode == mode_enum::group)
         {
@@ -1009,7 +1001,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     {
         o_buf.FromDevice(o_host.data());
         lse_buf.FromDevice(lse_host.data());
-        randval_buf.FromDevice(randval_host.data());
 
         constexpr bool supports_qscale = std::is_same_v<DataTypeConfig, SageAttentionFwdFp8> ||
                                          std::is_same_v<DataTypeConfig, SageAttentionFwdFp8Bf16> ||

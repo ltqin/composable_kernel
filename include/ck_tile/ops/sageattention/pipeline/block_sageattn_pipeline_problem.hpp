@@ -15,8 +15,6 @@ template <typename QDataType_,
           typename SaccDataType_,
           typename SMPLComputeDataType_,
           typename BiasDataType_,
-          typename RandValOutputDataType_,
-          typename LSEDataType_,
           typename PDataType_,
           typename OaccDataType_,
           typename ODataType_,
@@ -28,21 +26,19 @@ template <typename QDataType_,
           typename Traits_>
 struct BlockSageAttnPipelineProblem
 {
-    using QDataType             = remove_cvref_t<QDataType_>;
-    using KDataType             = remove_cvref_t<KDataType_>;
-    using VDataType             = remove_cvref_t<VDataType_>;
-    using SaccDataType          = remove_cvref_t<SaccDataType_>;
-    using SMPLComputeDataType   = remove_cvref_t<SMPLComputeDataType_>;
-    using BiasDataType          = remove_cvref_t<BiasDataType_>;
-    using RandValOutputDataType = remove_cvref_t<RandValOutputDataType_>;
-    using LSEDataType           = remove_cvref_t<LSEDataType_>;
-    using PDataType             = remove_cvref_t<PDataType_>;
-    using OaccDataType          = remove_cvref_t<OaccDataType_>;
-    using ODataType             = remove_cvref_t<ODataType_>;
-    using BlockFmhaShape        = remove_cvref_t<BlockFmhaShape_>;
-    using AttentionVariant      = remove_cvref_t<AttentionVariant_>;
-    using FmhaMask              = remove_cvref_t<FmhaMask_>;
-    using Traits                = remove_cvref_t<Traits_>;
+    using QDataType           = remove_cvref_t<QDataType_>;
+    using KDataType           = remove_cvref_t<KDataType_>;
+    using VDataType           = remove_cvref_t<VDataType_>;
+    using SaccDataType        = remove_cvref_t<SaccDataType_>;
+    using SMPLComputeDataType = remove_cvref_t<SMPLComputeDataType_>;
+    using BiasDataType        = remove_cvref_t<BiasDataType_>;
+    using PDataType           = remove_cvref_t<PDataType_>;
+    using OaccDataType        = remove_cvref_t<OaccDataType_>;
+    using ODataType           = remove_cvref_t<ODataType_>;
+    using BlockFmhaShape      = remove_cvref_t<BlockFmhaShape_>;
+    using AttentionVariant    = remove_cvref_t<AttentionVariant_>;
+    using FmhaMask            = remove_cvref_t<FmhaMask_>;
+    using Traits              = remove_cvref_t<Traits_>;
 
     static constexpr index_t kNumGemm0Warps = BlockFmhaShape::NumGemm0Warps;
     static constexpr index_t kNumGemm1Warps = BlockFmhaShape::NumGemm1Warps;
