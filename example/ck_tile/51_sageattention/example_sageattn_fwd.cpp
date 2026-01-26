@@ -56,7 +56,7 @@ auto create_args(int argc, char* argv[])
                 "n or 0, no bias\n"
                 "e(lementwise) or 1, elementwise bias with 1*1*s*s. e:1, 1*h*s*s. e:2, b*h*s*s\n"
                 "a(libi) or 2, alibi with 1*h. a:1, b*h")
-        .insert("prec", "fp16", "data type. fp32/fp16/bf16/fp8/bf8")
+        .insert("prec", "fp8bf16", "data type. fp8bf16/fp4bf16")
         .insert("mask",
                 "0",
                 "0: no mask, 1: top-left(same as 't'), 2:bottom-right(same as 'b')\n"
@@ -70,7 +70,6 @@ auto create_args(int argc, char* argv[])
                 "'g:y,x', generic attention mask coordinate with y/x size (only debug purpose for "
                 "now)")
         .insert("vlayout", "r", "r for row-major(seqlen*hdim), c for col-major(hdim*seqlen)")
-        .insert("lse", "0", "0 not store lse, 1 store lse")
         .insert("kname", "0", "if set to 1 will print kernel name")
         .insert("init",
                 "uf",
@@ -174,11 +173,7 @@ int main(int argc, char* argv[])
             return -1;
 
         const std::string data_type = arg_parser.get_str("prec");
-        if(data_type == "fp32")
-        {
-            return run<SageAttentionFwdFp32>(arg_parser) == fwd_result::success ? 0 : -2;
-        }
-        else if(data_type == "fp16")
+        if(data_type == "fp16")
         {
             return run<SageAttentionFwdFp16>(arg_parser) == fwd_result::success ? 0 : -2;
         }
@@ -190,9 +185,9 @@ int main(int argc, char* argv[])
         {
             return run<SageAttentionFwdFp8Bf16>(arg_parser) == fwd_result::success ? 0 : -2;
         }
-        else if(data_type == "fp8fp32")
+        else if(data_type == "fp4bf16")
         {
-            return run<SageAttentionFwdFp8Fp32>(arg_parser) == fwd_result::success ? 0 : -2;
+            return run<SageAttentionFwdFp8Bf16>(arg_parser) == fwd_result::success ? 0 : -2;
         }
         std::cerr << "Unsupported precision: " << data_type << std::endl;
         return -1;

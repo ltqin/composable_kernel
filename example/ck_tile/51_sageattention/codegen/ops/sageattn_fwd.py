@@ -36,7 +36,7 @@ DTYPE_BITS = {
     "bf16": 16,
     "fp8": 8,
     "fp8bf16": 8,
-    "fp8fp32": 8,
+    "fp4bf16": 4,
     "bf8": 8,
 }
 
@@ -791,17 +791,10 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
     _DT_FP16_BF16 = ("fp16", "bf16")
     _DT_FP8 = ("fp8",)
     _DT_FP8BF16 = ("fp8bf16",)
-    _DT_FP8FP32 = ("fp8fp32",)
 
     @classmethod
     def supported_dtypes(cls) -> Tuple[str]:
-        return (
-            cls._DT_FP32
-            + cls._DT_FP16_BF16
-            + cls._DT_FP8
-            + cls._DT_FP8BF16
-            + cls._DT_FP8FP32
-        )
+        return cls._DT_FP32 + cls._DT_FP16_BF16 + cls._DT_FP8 + cls._DT_FP8BF16
 
     # TODO: design a more practical way to do it
     # this is current supported tile size per hdim
@@ -826,10 +819,6 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
         elif dtype in cls._DT_FP8 or dtype in cls._DT_FP8BF16:
             return {
                 ( 64,  64) : [SageAttnFwdTileSize(128,  64,  32,  64,  32,  64,  2, 1, 1,  2, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
-                (128, 128) : [SageAttnFwdTileSize(128, 128,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
-            }  # fmt: skip
-        elif dtype in cls._DT_FP8FP32:
-            return {
                 (128, 128) : [SageAttnFwdTileSize(128, 128,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
             }  # fmt: skip
         else:
@@ -878,7 +867,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
                         pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
                     if receipt == 1 and bias != "bias":
                         pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip # TODO: cover arbitraty hdim# fmt: skip
-        elif dtype in cls._DT_FP8BF16 or dtype in cls._DT_FP8FP32:
+        elif dtype in cls._DT_FP8BF16:
             # no need lse kernels
             bias = "no"  # bias: only no
             skip = "f"  # skip: only false
@@ -903,20 +892,50 @@ class KernelComponentFactoryGfx950(
 ):
     arch = ArchTrait("gfx950")
 
+    # FP4 is only supported on gfx950
+    _DT_FP4BF16 = ("fp4bf16",)
+
+    @classmethod
+    def supported_dtypes(cls) -> Tuple[str]:
+        # Include all gfx9 dtypes plus FP4
+        return KernelComponentFactoryGfx9.supported_dtypes() + cls._DT_FP4BF16
+
     @classmethod
     def get_hdim_tile_size_dict(cls, dtype: str) -> Optional[dict]:
-        # SageAttention uses same tile sizes as gfx9
-        return KernelComponentFactoryGfx9.get_hdim_tile_size_dict(dtype)
+        if dtype in cls._DT_FP4BF16:
+            return {
+                (128, 128) : [SageAttnFwdTileSize(128, 128,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
+            }  # fmt: skip
+        else:
+            # Use gfx9 tile sizes for other dtypes
+            return KernelComponentFactoryGfx9.get_hdim_tile_size_dict(dtype)
 
     @classmethod
     def get_pipelines(
         cls, dtype, hdim, hdim_v, receipt, mask_impl
     ) -> List[SageAttnFwdPipeline]:
-        pipelines = KernelComponentFactoryGfx9.get_pipelines(
-            dtype, hdim, hdim_v, receipt, mask_impl
-        )
-        # SageAttention only uses qr and qr_async pipelines
-        return pipelines
+        if dtype in cls._DT_FP4BF16:
+            # FP4BF16 pipeline configuration (similar to FP8BF16)
+            bias = "no"  # bias: only no
+            skip = "f"  # skip: only false
+            pipelines = []
+            for mask, qscale in itertools.product(
+                get_mask_map(mask_impl).keys(),
+                ["no", "pertensor"],
+            ):
+                if hdim == 64:
+                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                else:
+                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+            return pipelines
+        else:
+            pipelines = KernelComponentFactoryGfx9.get_pipelines(
+                dtype, hdim, hdim_v, receipt, mask_impl
+            )
+            # SageAttention only uses qr and qr_async pipelines
+            return pipelines
 
 
 class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
@@ -924,11 +943,11 @@ class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
 
     _DT_FP16_BF16 = ("fp16", "bf16")
     _DT_FP8_FP8BF16 = ("fp8", "fp8bf16")
-    _DT_FP8FP32 = ("fp8fp32",)
+    _DT_FP4BF16 = ("fp4bf16",)
 
     @classmethod
     def supported_dtypes(cls) -> Tuple[str]:
-        return cls._DT_FP16_BF16 + cls._DT_FP8_FP8BF16 + cls._DT_FP8FP32
+        return cls._DT_FP16_BF16 + cls._DT_FP8_FP8BF16 + cls._DT_FP4BF16
 
     @classmethod
     def get_hdim_tile_size_dict(cls, dtype: str) -> Optional[dict]:
@@ -944,7 +963,7 @@ class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
                 ( 64,  64) : [SageAttnFwdTileSize(128,  64,  32,  64,  32,   64,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
                 (128, 128) : [SageAttnFwdTileSize( 64,  64,  32, 128,  32,  128,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
             }  # fmt: skip
-        elif dtype in cls._DT_FP8FP32:
+        elif dtype in cls._DT_FP4BF16:
             return {
                 #                             bm0, bn0, bk0, bn1, bk1,
                 (128, 128) : [SageAttnFwdTileSize( 64,  64,  32, 128,  32,  128,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
@@ -966,7 +985,7 @@ class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
             ):
                 pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
                 pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
-        elif dtype in cls._DT_FP8_FP8BF16 or dtype in cls._DT_FP8FP32:
+        elif dtype in cls._DT_FP8_FP8BF16 or dtype in cls._DT_FP4BF16:
             # no need lse kernels
             bias = "no"  # bias: only no
             skip = "f"  # skip: only false
@@ -1080,7 +1099,7 @@ def get_product(receipt: int) -> Product:
     elif receipt == 888:
 
         def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            cond = problem_ctx.dtype in ["fp8bf16", "fp8fp32"]
+            cond = problem_ctx.dtype in ["fp8bf16", "fp4bf16"]
             cond &= kernel_ctx.pipeline.F_vlayout == "row"
             cond &= problem_ctx.hdim == 128 or problem_ctx.hdim == 192
             return cond
