@@ -119,7 +119,6 @@ auto run(const ck_tile::ArgParser& arg_parser)
     bool o_perm                = arg_parser.get_bool("operm");
     float scale_s              = arg_parser.get_float("scale_s");
     bool is_v_rowmajor         = arg_parser.get_str("vlayout") == "r";
-    bool lse                   = arg_parser.get_bool("lse");
     std::string bias_str       = arg_parser.get_str("bias");
     std::string qscale_str     = arg_parser.get_str("qscale");
     std::string mask_str       = arg_parser.get_str("mask");
@@ -153,7 +152,6 @@ auto run(const ck_tile::ArgParser& arg_parser)
                                             o_perm,
                                             scale_s,
                                             is_v_rowmajor,
-                                            lse,
                                             bias_str,
                                             mask_str,
                                             qscale_str,
@@ -187,7 +185,7 @@ int main(int argc, char* argv[])
         }
         else if(data_type == "fp4bf16")
         {
-            return run<SageAttentionFwdFp8Bf16>(arg_parser) == fwd_result::success ? 0 : -2;
+            return run<SageAttentionFwdFp4Bf16>(arg_parser) == fwd_result::success ? 0 : -2;
         }
         std::cerr << "Unsupported precision: " << data_type << std::endl;
         return -1;

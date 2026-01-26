@@ -160,7 +160,6 @@ struct sageattn_fwd_args
     const void* q_descale_ptr;
     const void* k_descale_ptr;
     const void* v_descale_ptr;
-    void* lse_ptr;
     void* o_ptr;
 
     // Usage notes for sequence length pointer parameters:
@@ -397,7 +396,6 @@ struct sageattn_fwd_traits
     bool is_v_rowmajor;
     mask_enum mask_type;
     bias_enum bias_type; // 0:no bias, 1:elementwise bias, 2:alibi. sync with BlockAttentionBiasEnum
-    bool has_lse;
     quant_scale_enum qscale_type;
     bool skip_min_seqlen_q = false;
     // TODO: padding check is inside this api

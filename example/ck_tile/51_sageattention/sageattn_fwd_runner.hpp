@@ -97,7 +97,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                             bool o_perm,
                             float scale_s,
                             bool is_v_rowmajor,
-                            bool lse,
                             std::string bias_str,
                             std::string mask_str,
                             std::string qscale_str,
@@ -316,12 +315,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     ck_tile::HostTensor<float> k_descale_host(get_lengths(i_perm, 1, 1, 1, 1));
     ck_tile::HostTensor<float> v_descale_host(get_lengths(i_perm, 1, 1, 1, 1));
 
-    // batch mode of lse data layout is [batch, nhead, seqlen_q]
-    // group mode of lse data layout is [nhead, total_seqlen_q]
-    ck_tile::HostTensor<float> lse_host(
-        lse ? std::array<ck_tile::index_t, 3>{shape_batch, nhead, shape_seqlen_q}
-            : std::array<ck_tile::index_t, 3>{1, 1, 1} /* dummy shape for simplifying code */);
-
     ck_tile::HostTensor<ODataType> o_host(
         get_lengths(o_perm, shape_batch, nhead, shape_seqlen_q, hdim_v));
 
@@ -413,7 +406,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     ck_tile::DeviceMem q_descale_buf(q_descale_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem k_descale_buf(k_descale_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem v_descale_buf(v_descale_host.get_element_space_size_in_bytes());
-    ck_tile::DeviceMem lse_buf(lse_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem o_buf(o_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem seqstart_q(seqstart_q_host.size() * sizeof(int32_t));
     ck_tile::DeviceMem seqstart_k(seqstart_k_host.size() * sizeof(int32_t));
@@ -472,7 +464,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
               << (seqlen_kpads[0] < 0 ? ""
                                       : (std::string("(") + std::to_string(seqlen_kpads[0]) + ")"))
               << ", d:" << hdim_q << "/" << hdim_v << ", scale_s:" << scale_s << ", bias:" << bias
-              << ", lse:" << lse << ", qscale:" << qscale << ", mask:" << mask
+              << ", qscale:" << qscale << ", mask:" << mask
               << ", v:" << (is_v_rowmajor ? "r" : "c");
     // Padding / effective length diagnostic logging
     auto print_vec = [&](const char* label, const std::vector<int>& v) {
@@ -532,7 +524,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         traits.is_group_mode = (mode == mode_enum::group);
         traits.mask_type     = mask.type;
         traits.bias_type     = bias.type;
-        traits.has_lse       = lse;
         traits.qscale_type   = qscale.type;
     };
 
@@ -596,7 +587,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         // Setup sageattn_fwd_args
         args.bias_ptr = bias.type == bias_enum::alibi ? alibi_slope_buf.GetDeviceBuffer()
                                                       : bias_buf.GetDeviceBuffer();
-        args.lse_ptr  = lse_buf.GetDeviceBuffer();
         args.o_ptr    = o_buf.GetDeviceBuffer();
 
         args.seqlen_k     = shape_seqlen_k; // unused in group mode (or kvcache enabled)
@@ -749,7 +739,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     else
     {
         o_buf.FromDevice(o_host.data());
-        lse_buf.FromDevice(lse_host.data());
 
         constexpr bool supports_qscale = std::is_same_v<DataTypeConfig, SageAttentionFwdFp8> ||
                                          std::is_same_v<DataTypeConfig, SageAttentionFwdFp8Bf16> ||
@@ -824,7 +813,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             ck_tile::HostTensor<SMPLComputeDataType> s_host_ref(
                 {nhead, real_seqlen_q, real_seqlen_k});
             ck_tile::HostTensor<PDataType> p_host_ref({nhead, real_seqlen_q, real_seqlen_k});
-            ck_tile::HostTensor<SMPLComputeDataType> lse_host_ref({nhead, real_seqlen_q});
 
             ck_tile::index_t nr = nhead / nhead_k;
 
@@ -973,18 +961,8 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                             mask.type == mask_enum::mask_top_left));
             }
             const ck_tile::HostTensor<SaccDataType> masked_s_host_ref = s_host_ref;
-            if(lse)
-            {
-                ck_tile::
-                    reference_batched_softmax<SMPLComputeDataType, SMPLComputeDataType, PDataType>(
-                        s_host_ref, p_host_ref, p_compute_element_func, lse_host_ref);
-            }
-            else
-            {
-                ck_tile::
-                    reference_batched_softmax<SMPLComputeDataType, SMPLComputeDataType, PDataType>(
-                        s_host_ref, p_host_ref, p_compute_element_func);
-            }
+            ck_tile::reference_batched_softmax<SMPLComputeDataType, SMPLComputeDataType, PDataType>(
+                s_host_ref, p_host_ref, p_compute_element_func);
 
             ck_tile::reference_batched_gemm<PDataType, VDataType, OaccDataType, ODataType>(
                 p_host_ref,
@@ -1024,33 +1002,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
 
                 break;
             }
-
-            if(lse)
-            {
-                ck_tile::HostTensor<SMPLComputeDataType> lse_host_result({nhead, real_seqlen_q});
-                lse_host_result.ForEach([&](auto& self, auto idx) {
-                    self(idx) = lse_host(b_idx, idx[0], idx[1] + query_offset);
-                });
-
-                cur_pass = ck_tile::check_err(lse_host_result,
-                                              lse_host_ref,
-                                              "LSE Error: Incorrect results!",
-                                              rtol,
-                                              atol,
-                                              /* allow_infinity_ref = */ true);
-
-                pass &= cur_pass;
-                if(!cur_pass)
-                {
-                    std::cerr << "LSE mismatch found at batch: " << wb << std::endl
-                              << "\tseqlen_q: " << real_seqlen_q << std::endl
-                              << "\tseqlen_k: " << real_seqlen_k << std::endl
-                              << "\tseqstart_q: " << seqstart_q_host << std::endl
-                              << "\tseqstart_k: " << seqstart_k_host << std::endl;
-
-                    break;
-                }
-            }
         }
 
         std::cout << ", valid:" << (pass ? "y" : "n") << std::flush << std::endl;
@@ -1071,8 +1022,8 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                                    hdim_q,
                                    hdim_v,
                                    scale_s,
-                                   0.0f, // p_drop (dropout disabled for sageattention)
-                                   lse,
+                                   0.0f,  // p_drop (dropout disabled for sageattention)
+                                   false, // lse (always disabled for sageattention)
                                    qscale.type == quant_scale_enum::no_scale ? "no_scale"
                                                                              : "pertensor",
                                    bias.type == bias_enum::elementwise_bias
