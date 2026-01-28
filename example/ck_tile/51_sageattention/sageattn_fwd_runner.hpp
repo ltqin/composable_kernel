@@ -73,7 +73,7 @@ auto get_elimit<SageAttentionFwdFp8Bf16>(std::string /*init_method*/)
 }
 
 template <>
-auto get_elimit<SageAttentionFwdFp4Bf16>(std::string /*init_method*/)
+auto get_elimit<SageAttentionFwdI8Fp8Bf16>(std::string /*init_method*/)
 {
     double rtol = 1e-2;
     double atol = 1.8e-1;
@@ -119,8 +119,8 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             return "bf8";
         else if constexpr(std::is_same_v<DataTypeConfig, SageAttentionFwdFp8Bf16>)
             return "fp8bf16";
-        else if constexpr(std::is_same_v<DataTypeConfig, SageAttentionFwdFp4Bf16>)
-            return "fp4bf16";
+        else if constexpr(std::is_same_v<DataTypeConfig, SageAttentionFwdI8Fp8Bf16>)
+            return "i8fp8bf16";
         else
             static_assert(false);
     }();
@@ -742,7 +742,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
 
         constexpr bool supports_qscale = std::is_same_v<DataTypeConfig, SageAttentionFwdFp8> ||
                                          std::is_same_v<DataTypeConfig, SageAttentionFwdFp8Bf16> ||
-                                         std::is_same_v<DataTypeConfig, SageAttentionFwdFp4Bf16>;
+                                         std::is_same_v<DataTypeConfig, SageAttentionFwdI8Fp8Bf16>;
 
         float scale_s_host = scale_s;
         float scale_p_host = 1.0f;

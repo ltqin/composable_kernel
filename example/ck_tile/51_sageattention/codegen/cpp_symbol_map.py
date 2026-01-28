@@ -8,7 +8,7 @@ FWD_DTYPE_MAP = {
     "fp8": "SageAttentionFwdFp8",
     "fp8fp16": "SageAttentionFwdFp8Fp16",
     "fp8bf16": "SageAttentionFwdFp8Bf16",
-    "fp4bf16": "SageAttentionFwdFp4Bf16",
+    "i8fp8bf16": "SageAttentionFwdI8Fp8Bf16",
 }
 
 BWD_DTYPE_MAP = {"fp32": "FmhaBwdFp32", "fp16": "FmhaBwdFp16", "bf16": "FmhaBwdBf16"}
