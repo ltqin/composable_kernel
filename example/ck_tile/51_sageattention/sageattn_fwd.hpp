@@ -134,12 +134,12 @@ struct SageAttentionFwdTypeConfig<SageAttentionFwdI8Fp8Bf16>
     using QDataType           = ck_tile::fp8_t;
     using KDataType           = ck_tile::fp8_t;
     using VDataType           = ck_tile::fp8_t;
-    using ScaleType           = float;           // scale type for Q and K
+    using ScaleType           = float; // scale type for Q and K
     using BiasDataType        = float;
-    using SaccDataType        = float;           // data type for first gemm accumulation
-    using SMPLComputeDataType = float;           // data type for reduction, softmax
-    using PDataType           = ck_tile::fp8_t;  // P in FP8 for 2nd gemm
-    using OaccDataType        = float;           // data type for second gemm accumulation
+    using SaccDataType        = float;          // data type for first gemm accumulation
+    using SMPLComputeDataType = float;          // data type for reduction, softmax
+    using PDataType           = ck_tile::fp8_t; // P in FP8 for 2nd gemm
+    using OaccDataType        = float;          // data type for second gemm accumulation
     using ODataType           = ck_tile::bf16_t;
 };
 

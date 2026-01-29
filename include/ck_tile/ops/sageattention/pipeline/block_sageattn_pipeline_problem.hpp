@@ -18,7 +18,7 @@ template <typename QDataType_,
           typename PDataType_,
           typename OaccDataType_,
           typename ODataType_,
-          typename BlockFmhaShape_,
+          typename BlockSageAttnShape_,
           bool kIsGroupMode_,
           typename AttentionVariant_,
           typename FmhaMask_,
@@ -35,14 +35,14 @@ struct BlockSageAttnPipelineProblem
     using PDataType           = remove_cvref_t<PDataType_>;
     using OaccDataType        = remove_cvref_t<OaccDataType_>;
     using ODataType           = remove_cvref_t<ODataType_>;
-    using BlockFmhaShape      = remove_cvref_t<BlockFmhaShape_>;
+    using BlockSageAttnShape  = remove_cvref_t<BlockSageAttnShape_>;
     using AttentionVariant    = remove_cvref_t<AttentionVariant_>;
     using FmhaMask            = remove_cvref_t<FmhaMask_>;
     using Traits              = remove_cvref_t<Traits_>;
 
-    static constexpr index_t kNumGemm0Warps = BlockFmhaShape::NumGemm0Warps;
-    static constexpr index_t kNumGemm1Warps = BlockFmhaShape::NumGemm1Warps;
-    static constexpr index_t kBlockSize     = BlockFmhaShape::NumWarps * get_warp_size();
+    static constexpr index_t kNumGemm0Warps = BlockSageAttnShape::NumGemm0Warps;
+    static constexpr index_t kNumGemm1Warps = BlockSageAttnShape::NumGemm1Warps;
+    static constexpr index_t kBlockSize     = BlockSageAttnShape::NumWarps * get_warp_size();
 
     static constexpr bool kIsGroupMode = kIsGroupMode_;
     static constexpr bool kUseTrLoad   = kUseTrLoad_;

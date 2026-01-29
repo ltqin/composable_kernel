@@ -29,20 +29,20 @@ struct BlockSageAttentionPipelineQRKSVSAsync
     using AttentionVariant    = remove_cvref_t<typename Problem::AttentionVariant>;
     using FmhaMask            = remove_cvref_t<typename Problem::FmhaMask>;
 
-    using BlockFmhaShape             = remove_cvref_t<typename Problem::BlockFmhaShape>;
-    using VLayout                    = remove_cvref_t<typename BlockFmhaShape::VLayout>;
+    using BlockSageAttnShape         = remove_cvref_t<typename Problem::BlockSageAttnShape>;
+    using VLayout                    = remove_cvref_t<typename BlockSageAttnShape::VLayout>;
     static constexpr bool kQLoadOnce = true; // if q_tile load whole block length (hdim) at once
     static_assert(kQLoadOnce == Policy::QLoadOnce);
 
     static constexpr index_t kBlockSize = Problem::kBlockSize;
 
-    static constexpr index_t kM0           = BlockFmhaShape::kM0;
-    static constexpr index_t kN0           = BlockFmhaShape::kN0;
-    static constexpr index_t kK0           = BlockFmhaShape::kK0;
-    static constexpr index_t kN1           = BlockFmhaShape::kN1;
-    static constexpr index_t kK1           = BlockFmhaShape::kK1;
-    static constexpr index_t kQKHeaddim    = BlockFmhaShape::kQKHeaddim;
-    static constexpr index_t kSubQKHeaddim = BlockFmhaShape::kSubQKHeaddim;
+    static constexpr index_t kM0           = BlockSageAttnShape::kM0;
+    static constexpr index_t kN0           = BlockSageAttnShape::kN0;
+    static constexpr index_t kK0           = BlockSageAttnShape::kK0;
+    static constexpr index_t kN1           = BlockSageAttnShape::kN1;
+    static constexpr index_t kK1           = BlockSageAttnShape::kK1;
+    static constexpr index_t kQKHeaddim    = BlockSageAttnShape::kQKHeaddim;
+    static constexpr index_t kSubQKHeaddim = BlockSageAttnShape::kSubQKHeaddim;
 
     static_assert(kSubQKHeaddim <= 256, "hdim bigger than 256 is not suitable for this pipeline!");
 
