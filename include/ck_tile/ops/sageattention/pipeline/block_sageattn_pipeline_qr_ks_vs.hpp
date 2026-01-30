@@ -304,21 +304,13 @@ struct BlockSageAttentionPipelineQRKSVS
         static_assert(1 <= k1_loops);
         do
         {
-            // Read K/V descale for BLOCKSCALE mode
             float k_descale = 1.0f;
-            float v_descale = 1.0f;
-            if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
+            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
             {
-                if(k_descale_ptr != nullptr && block_scale_size_kv > 0)
-                {
-                    // K and V share the same seqlen_k position within a block
-                    const index_t kv_idx =
-                        (seqlen_k_start + i_total_loops * kN0) / block_scale_size_kv;
-                    k_descale = k_descale_ptr[kv_idx];
-                    v_descale = v_descale_ptr[kv_idx];
-                }
+                // K and V share the same seqlen_k position within a block
+                const index_t kv_idx = (seqlen_k_start + i_total_loops * kN0) / block_scale_size_kv;
+                k_descale            = k_descale_ptr[kv_idx];
             }
-
             // STAGE 1, QK gemm
             auto k_dram_window = make_tile_window(
                 k_dram_block_window.get_bottom_tensor_view(),
@@ -402,20 +394,20 @@ struct BlockSageAttentionPipelineQRKSVS
                 }
             }();
 
+            // dequant: create element function that combines q_descale and k_descale for BLOCKSCALE
+            auto s_acc_element_func_ = [&s_acc_element_func, k_descale]() {
+                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
+                {
+                    return s_acc_element_func * k_descale;
+                }
+                else
+                    return s_acc_element_func;
+            }();
+
             // STAGE 2, scale_s, add bias, mask, softmax
             if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
             {
-                // Apply s_acc_element_func (q_descale) and k_descale together for BLOCKSCALE
-                if constexpr(Problem::QScaleEnum ==
-                             ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
-                {
-                    s_acc = tile_elementwise_in(
-                        [&](const auto& x) { return s_acc_element_func(x) * k_descale; }, s_acc);
-                }
-                else
-                {
-                    s_acc = tile_elementwise_in(s_acc_element_func, s_acc);
-                }
+                s_acc = tile_elementwise_in(s_acc_element_func_, s_acc);
                 tile_elementwise_inout([&scale_s](auto& x) { x = x * scale_s; }, s_acc);
                 tile_elementwise_inout(
                     [&](auto& x, const auto& y) {
@@ -433,17 +425,7 @@ struct BlockSageAttentionPipelineQRKSVS
             {
                 const auto k_origin    = k_dram_block_window.get_window_origin();
                 constexpr auto s_spans = decltype(s_acc)::get_distributed_spans();
-                // Apply s_acc_element_func (q_descale) and k_descale together for BLOCKSCALE
-                if constexpr(Problem::QScaleEnum ==
-                             ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
-                {
-                    s_acc = tile_elementwise_in(
-                        [&](const auto& x) { return s_acc_element_func(x) * k_descale; }, s_acc);
-                }
-                else
-                {
-                    s_acc = tile_elementwise_in(s_acc_element_func, s_acc);
-                }
+                s_acc                  = tile_elementwise_in(s_acc_element_func_, s_acc);
                 sweep_tile_span(s_spans[number<0>{}], [&](auto idx0) {
                     sweep_tile_span(s_spans[number<1>{}], [&](auto idx1) {
                         const auto tile_idx = get_x_indices_from_distributed_indices(
@@ -460,17 +442,7 @@ struct BlockSageAttentionPipelineQRKSVS
             }
             else
             {
-                // Apply s_acc_element_func (q_descale) and k_descale together for BLOCKSCALE
-                if constexpr(Problem::QScaleEnum ==
-                             ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
-                {
-                    s_acc = tile_elementwise_in(
-                        [&](const auto& x) { return s_acc_element_func(x) * k_descale; }, s_acc);
-                }
-                else
-                {
-                    s_acc = tile_elementwise_in(s_acc_element_func, s_acc);
-                }
+                s_acc = tile_elementwise_in(s_acc_element_func_, s_acc);
 #if !CK_TILE_FMHA_FWD_FAST_EXP2
                 tile_elementwise_inout([&scale_s](auto& x) { x = x * scale_s; }, s_acc);
 #endif
@@ -585,25 +557,15 @@ struct BlockSageAttentionPipelineQRKSVS
             sweep_tile_span(o_spans[number<0>{}], [&](auto idx0) {
                 constexpr auto i_idx = make_tuple(idx0);
 #if CK_TILE_FMHA_FWD_FAST_EXP2
-                // For BLOCKSCALE: validated_m already has shift subtracted
-                auto validated_m = get_validated_m(m[i_idx]);
-                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
-                {
-#if CK_TILE_USE_OCP_FP8
-                    validated_m -= OCP_FP8_SHIFT;
-#else
-                    validated_m -= FNUZ_FP8_SHIFT;
-#endif
-                }
                 const auto tmp = [&]() {
                     if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS ||
                                  BiasEnum == BlockAttentionBiasEnum::ALIBI)
                     {
-                        return exp2(m_old[i_idx] - validated_m);
+                        return exp2(m_old[i_idx] - get_validated_m(m[i_idx]));
                     }
                     else
                     {
-                        auto row_max = scale_s * validated_m;
+                        auto row_max = scale_s * get_validated_m(m[i_idx]);
                         return exp2(scale_s * m_old[i_idx] - row_max);
                     }
                 }();
@@ -640,6 +602,13 @@ struct BlockSageAttentionPipelineQRKSVS
             const auto p =
                 cast_tile<PDataType>(tile_elementwise_in(p_compute_element_func, p_compute));
 
+            float v_descale = 1.0f;
+            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
+            {
+                // K and V share the same seqlen_k position within a block
+                const index_t kv_idx = (seqlen_k_start + i_total_loops * kN0) / block_scale_size_kv;
+                v_descale            = v_descale_ptr[kv_idx];
+            }
             // STAGE 3, KV gemm
             // For BLOCKSCALE mode, use temporary accumulator to apply v_descale
             auto o_acc_tmp = decltype(o_acc){};
