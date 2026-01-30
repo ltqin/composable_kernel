@@ -877,7 +877,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
             skip = "f"  # skip: only false
             for mask, qscale in itertools.product(
                 get_mask_map(mask_impl).keys(),
-                ["no", "pertensor"],
+                ["no", "pertensor", "blockscale"],
             ):
                 if hdim == 64:
                     pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
@@ -950,7 +950,7 @@ class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
             skip = "f"  # skip: only false
             for mask, qscale in itertools.product(
                 get_mask_map(mask_impl).keys(),
-                ["no", "pertensor"],
+                ["no", "pertensor", "blockscale"],
             ):
                 pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
                 pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip

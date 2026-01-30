@@ -240,6 +240,18 @@ struct sageattn_fwd_args
     ck_tile::index_t window_size_right;
     ck_tile::index_t mask_type;
     ck_tile::index_t min_seqlen_q;
+
+    // BLOCKSCALE parameters
+    ck_tile::index_t nhead_stride_q_descale = 0;
+    ck_tile::index_t nhead_stride_k_descale = 0;
+    ck_tile::index_t nhead_stride_v_descale = 0;
+    ck_tile::index_t batch_stride_q_descale = 0;
+    ck_tile::index_t batch_stride_k_descale = 0;
+    ck_tile::index_t batch_stride_v_descale = 0;
+    ck_tile::index_t block_scale_size_q     = 0;
+    ck_tile::index_t block_scale_size_kv    = 0;
+    const void* block_scale_seqstart_q_ptr  = nullptr;
+    const void* block_scale_seqstart_k_ptr  = nullptr;
 };
 
 template <typename SageAttnKernel>
@@ -277,6 +289,13 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.nhead_stride_v,
                                                  args.nhead_stride_bias,
                                                  args.nhead_stride_o,
+                                                 args.nhead_stride_q_descale,
+                                                 args.nhead_stride_k_descale,
+                                                 args.nhead_stride_v_descale,
+                                                 args.block_scale_size_q,
+                                                 args.block_scale_size_kv,
+                                                 args.block_scale_seqstart_q_ptr,
+                                                 args.block_scale_seqstart_k_ptr,
                                                  args.window_size_left,
                                                  args.window_size_right,
                                                  args.mask_type,
@@ -311,11 +330,19 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.nhead_stride_v,
                                                  args.nhead_stride_bias,
                                                  args.nhead_stride_o,
+                                                 args.nhead_stride_q_descale,
+                                                 args.nhead_stride_k_descale,
+                                                 args.nhead_stride_v_descale,
                                                  args.batch_stride_q,
                                                  args.batch_stride_k,
                                                  args.batch_stride_v,
                                                  args.batch_stride_bias,
                                                  args.batch_stride_o,
+                                                 args.batch_stride_q_descale,
+                                                 args.batch_stride_k_descale,
+                                                 args.batch_stride_v_descale,
+                                                 args.block_scale_size_q,
+                                                 args.block_scale_size_kv,
                                                  args.window_size_left,
                                                  args.window_size_right,
                                                  args.mask_type,

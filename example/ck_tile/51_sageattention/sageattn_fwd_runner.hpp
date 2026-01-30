@@ -106,6 +106,11 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                             const ck_tile::stream_config& stream_config,
                             std::optional<std::string> json = std::nullopt)
 {
+    // Note: block_scale_size_q_ and block_scale_size_kv_ should be greater than or equal to the
+    // compute block size
+    constexpr ck_tile::index_t block_scale_size_q_  = 128;
+    constexpr ck_tile::index_t block_scale_size_kv_ = 128;
+
     const std::string data_type = []() {
         if constexpr(std::is_same_v<DataTypeConfig, SageAttentionFwdFp32>)
             return "fp32";
@@ -292,6 +297,34 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                                          ? seqstart_k_with_padding_host.back()
                                          : seqstart_k_host.back()));
 
+    // Calculate number of blocks for blockscale mode
+    ck_tile::index_t i_block_scale_q = 0;
+    ck_tile::index_t i_block_scale_k = 0;
+    std::vector<int32_t> block_scale_seqstart_q_host{0};
+    std::vector<int32_t> block_scale_seqstart_k_host{0};
+
+    if(mode == mode_enum::group)
+    {
+        for(ck_tile::index_t wb = 0; wb < batch; ++wb)
+        {
+            const int32_t real_seqlen_q = seqstart_q_host[wb + 1] - seqstart_q_host[wb];
+            const int32_t real_seqlen_k = seqstart_k_host[wb + 1] - seqstart_k_host[wb];
+            i_block_scale_q += ck_tile::integer_divide_ceil(real_seqlen_q, block_scale_size_q_);
+            i_block_scale_k += ck_tile::integer_divide_ceil(real_seqlen_k, block_scale_size_kv_);
+            block_scale_seqstart_q_host.push_back(i_block_scale_q);
+            block_scale_seqstart_k_host.push_back(i_block_scale_k);
+        }
+    }
+
+    const ck_tile::index_t num_block_scale_q =
+        (mode == mode_enum::batch)
+            ? ck_tile::integer_divide_ceil(shape_seqlen_q, block_scale_size_q_)
+            : i_block_scale_q;
+    const ck_tile::index_t num_block_scale_kv =
+        (mode == mode_enum::batch)
+            ? ck_tile::integer_divide_ceil(shape_seqlen_k, block_scale_size_kv_)
+            : i_block_scale_k;
+
     ck_tile::HostTensor<QDataType> q_host(
         get_lengths(i_perm, shape_batch, nhead, shape_seqlen_q, hdim_q));
     ck_tile::HostTensor<KDataType> k_host(
@@ -311,9 +344,18 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             : std::array<ck_tile::index_t, 2>{1, 1});
 
     // TODO - change the tensor length for different quant scale
-    ck_tile::HostTensor<float> q_descale_host(get_lengths(i_perm, 1, 1, 1, 1));
-    ck_tile::HostTensor<float> k_descale_host(get_lengths(i_perm, 1, 1, 1, 1));
-    ck_tile::HostTensor<float> v_descale_host(get_lengths(i_perm, 1, 1, 1, 1));
+    ck_tile::HostTensor<float> q_descale_host(
+        qscale.type == quant_scale_enum::blockscale
+            ? std::array<ck_tile::index_t, 3>{shape_batch, nhead, num_block_scale_q}
+            : std::array<ck_tile::index_t, 3>{1, 1, 1});
+    ck_tile::HostTensor<float> k_descale_host(
+        qscale.type == quant_scale_enum::blockscale
+            ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, num_block_scale_kv}
+            : std::array<ck_tile::index_t, 3>{1, 1, 1});
+    ck_tile::HostTensor<float> v_descale_host(
+        qscale.type == quant_scale_enum::blockscale
+            ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, num_block_scale_kv}
+            : std::array<ck_tile::index_t, 3>{1, 1, 1});
 
     ck_tile::HostTensor<ODataType> o_host(
         get_lengths(o_perm, shape_batch, nhead, shape_seqlen_q, hdim_v));
@@ -398,6 +440,24 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         k_descale_host(0) = qkv_max / k_dtype_max;
         v_descale_host(0) = qkv_max / v_dtype_max;
     }
+    else if(qscale.type == quant_scale_enum::blockscale)
+    {
+        float q_dtype_max = ck_tile::type_convert<float>(ck_tile::numeric<QDataType>::max());
+        float k_dtype_max = ck_tile::type_convert<float>(ck_tile::numeric<KDataType>::max());
+        float v_dtype_max = ck_tile::type_convert<float>(ck_tile::numeric<VDataType>::max());
+
+        float qkv_max       = 3.f;
+        float max_descale_q = qkv_max / q_dtype_max;
+        float max_descale_k = qkv_max / k_dtype_max;
+        float max_descale_v = qkv_max / v_dtype_max;
+
+        ck_tile::FillUniformDistribution<float>{max_descale_q * 0.8f, max_descale_q, next_seed()}(
+            q_descale_host);
+        ck_tile::FillUniformDistribution<float>{max_descale_k * 0.8f, max_descale_k, next_seed()}(
+            k_descale_host);
+        ck_tile::FillUniformDistribution<float>{max_descale_v * 0.8f, max_descale_v, next_seed()}(
+            v_descale_host);
+    }
 
     ck_tile::DeviceMem q_buf(q_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem k_buf(k_host.get_element_space_size_in_bytes());
@@ -426,6 +486,14 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     ck_tile::DeviceMem cu_seqlen_kv_buf(
         cukv_cum.empty() ? 0 : cukv_cum.size() * sizeof(ck_tile::index_t));
     ck_tile::DeviceMem alibi_slope_buf(alibi_slope_host.get_element_space_size_in_bytes());
+    ck_tile::DeviceMem block_scale_seqstart_q_buf(
+        (mode == mode_enum::group && qscale.type == quant_scale_enum::blockscale)
+            ? block_scale_seqstart_q_host.size() * sizeof(int32_t)
+            : 0);
+    ck_tile::DeviceMem block_scale_seqstart_k_buf(
+        (mode == mode_enum::group && qscale.type == quant_scale_enum::blockscale)
+            ? block_scale_seqstart_k_host.size() * sizeof(int32_t)
+            : 0);
 
     q_buf.ToDevice(q_host.data());
     k_buf.ToDevice(k_host.data());
@@ -446,6 +514,14 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     seqlen_q_buf.ToDevice(has_group_q_padding ? seqlen_qs.data() : nullptr);
     seqlen_k_buf.ToDevice(has_group_k_padding ? seqlen_ks.data() : nullptr);
     alibi_slope_buf.ToDevice(alibi_slope_host.data());
+    block_scale_seqstart_q_buf.ToDevice(
+        (mode == mode_enum::group && qscale.type == quant_scale_enum::blockscale)
+            ? block_scale_seqstart_q_host.data()
+            : nullptr);
+    block_scale_seqstart_k_buf.ToDevice(
+        (mode == mode_enum::group && qscale.type == quant_scale_enum::blockscale)
+            ? block_scale_seqstart_k_host.data()
+            : nullptr);
 
     // clang-format off
     auto layout_str = [&](bool permute){
@@ -611,6 +687,28 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         args.q_descale_ptr = q_descale_buf.GetDeviceBuffer();
         args.k_descale_ptr = k_descale_buf.GetDeviceBuffer();
         args.v_descale_ptr = v_descale_buf.GetDeviceBuffer();
+
+        // BLOCKSCALE parameters
+        if(qscale.type == quant_scale_enum::blockscale)
+        {
+            args.nhead_stride_q_descale = num_block_scale_q;
+            args.nhead_stride_k_descale = num_block_scale_kv;
+            args.nhead_stride_v_descale = num_block_scale_kv;
+            args.block_scale_size_q     = block_scale_size_q_;
+            args.block_scale_size_kv    = block_scale_size_kv_;
+
+            if(mode == mode_enum::batch)
+            {
+                args.batch_stride_q_descale = nhead * num_block_scale_q;
+                args.batch_stride_k_descale = nhead_k * num_block_scale_kv;
+                args.batch_stride_v_descale = nhead_k * num_block_scale_kv;
+            }
+            else // group mode
+            {
+                args.block_scale_seqstart_q_ptr = block_scale_seqstart_q_buf.GetDeviceBuffer();
+                args.block_scale_seqstart_k_ptr = block_scale_seqstart_k_buf.GetDeviceBuffer();
+            }
+        }
 
         // Sequence length and padding parameters (mode-specific)
         if(mode == mode_enum::group)
@@ -849,14 +947,42 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             }
 
             // reference
-            ck_tile::
-                reference_batched_gemm<QDataType, KDataType, SaccDataType, SMPLComputeDataType>(
+            if(qscale.type == quant_scale_enum::blockscale)
+            {
+                const ck_tile::index_t q_offset =
+                    (mode == mode_enum::batch) ? 0 : block_scale_seqstart_q_host[wb];
+                const ck_tile::index_t k_offset =
+                    (mode == mode_enum::batch) ? 0 : block_scale_seqstart_k_host[wb];
+                ck_tile::reference_batched_quant_gemm<QDataType,
+                                                      KDataType,
+                                                      SaccDataType,
+                                                      SMPLComputeDataType>(
                     q_host_ref,
                     k_host_ref,
                     s_host_ref,
-                    ck_tile::identity{},
-                    ck_tile::identity{},
-                    ck_tile::scales(scale_s_host));
+                    ck_tile::idx_identity{},
+                    ck_tile::idx_identity{},
+                    [&](auto idx, auto value) {
+                        return value * scale_s *
+                               q_descale_host(b_idx,
+                                              std::get<0>(idx),
+                                              q_offset + std::get<1>(idx) / block_scale_size_q_) *
+                               k_descale_host(b_idx,
+                                              std::get<0>(idx) / nr,
+                                              k_offset + std::get<2>(idx) / block_scale_size_kv_);
+                    });
+            }
+            else
+            {
+                ck_tile::
+                    reference_batched_gemm<QDataType, KDataType, SaccDataType, SMPLComputeDataType>(
+                        q_host_ref,
+                        k_host_ref,
+                        s_host_ref,
+                        ck_tile::identity{},
+                        ck_tile::identity{},
+                        ck_tile::scales(scale_s_host));
+            }
 
             if(bias.type == bias_enum::elementwise_bias)
             {
@@ -964,13 +1090,35 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             ck_tile::reference_batched_softmax<SMPLComputeDataType, SMPLComputeDataType, PDataType>(
                 s_host_ref, p_host_ref, p_compute_element_func);
 
-            ck_tile::reference_batched_gemm<PDataType, VDataType, OaccDataType, ODataType>(
-                p_host_ref,
-                v_host_ref,
-                o_host_ref,
-                ck_tile::identity{},
-                ck_tile::identity{},
-                oacc_element_func);
+            if(qscale.type == quant_scale_enum::blockscale)
+            {
+                const ck_tile::index_t v_offset =
+                    (mode == mode_enum::batch) ? 0 : block_scale_seqstart_k_host[wb];
+                ck_tile::
+                    reference_batched_quant_gemm<PDataType, VDataType, OaccDataType, ODataType>(
+                        p_host_ref,
+                        v_host_ref,
+                        o_host_ref,
+                        ck_tile::idx_identity{},
+                        [&](auto idx, auto value) {
+                            return ck_tile::type_convert<float>(value) *
+                                   v_descale_host(b_idx,
+                                                  std::get<0>(idx) / nr,
+                                                  v_offset +
+                                                      std::get<2>(idx) / block_scale_size_kv_);
+                        },
+                        ck_tile::idx_identity{});
+            }
+            else
+            {
+                ck_tile::reference_batched_gemm<PDataType, VDataType, OaccDataType, ODataType>(
+                    p_host_ref,
+                    v_host_ref,
+                    o_host_ref,
+                    ck_tile::identity{},
+                    ck_tile::identity{},
+                    oacc_element_func);
+            }
 
             ck_tile::HostTensor<ODataType> o_host_result({nhead, real_seqlen_q, hdim_v});
             // clang-format off

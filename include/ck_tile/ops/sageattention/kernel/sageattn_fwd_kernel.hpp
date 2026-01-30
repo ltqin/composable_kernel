@@ -206,6 +206,29 @@ struct SageAttnFwdKernel
         const void* v_descale_ptr = nullptr;
     };
 
+    struct SageAttnFwdCommonBlockScaleKargs : public SageAttnFwdCommonQScaleKargs
+    {
+        ck_tile::index_t nhead_stride_q_descale;
+        ck_tile::index_t nhead_stride_k_descale;
+        ck_tile::index_t nhead_stride_v_descale;
+
+        ck_tile::index_t block_scale_size_q;
+        ck_tile::index_t block_scale_size_kv;
+    };
+
+    struct SageAttnFwdBatchBlockScaleKargs : public SageAttnFwdCommonBlockScaleKargs
+    {
+        ck_tile::index_t batch_stride_q_descale;
+        ck_tile::index_t batch_stride_k_descale;
+        ck_tile::index_t batch_stride_v_descale;
+    };
+
+    struct SageAttnFwdGroupBlockScaleKargs : public SageAttnFwdCommonBlockScaleKargs
+    {
+        const int32_t* block_scale_seqstart_q_ptr = nullptr;
+        const int32_t* block_scale_seqstart_k_ptr = nullptr;
+    };
+
     struct SageAttnFwdSkipMinSeqlenQKargs
     {
         ck_tile::index_t min_seqlen_q = 0;
@@ -219,9 +242,12 @@ struct SageAttnFwdKernel
                                                 SageAttnFwdAlibiKargs,
                                                 SageAttnFwdEmptyKargs<0>>>,
           std::conditional_t<kHasMask, SageAttnFwdMaskKargs, SageAttnFwdEmptyKargs<1>>,
-          std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
-                             SageAttnFwdCommonQScaleKargs,
-                             SageAttnFwdEmptyKargs<2>>
+          std::conditional_t<
+              QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
+              SageAttnFwdCommonQScaleKargs,
+              std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE,
+                                 SageAttnFwdBatchBlockScaleKargs,
+                                 SageAttnFwdEmptyKargs<2>>>
     {
         ck_tile::index_t batch_stride_q;
         ck_tile::index_t batch_stride_k;
@@ -242,9 +268,12 @@ struct SageAttnFwdKernel
                                                 SageAttnFwdAlibiKargs,
                                                 SageAttnFwdEmptyKargs<0>>>,
           std::conditional_t<kHasMask, SageAttnFwdMaskKargs, SageAttnFwdEmptyKargs<1>>,
-          std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
-                             SageAttnFwdCommonQScaleKargs,
-                             SageAttnFwdEmptyKargs<2>>,
+          std::conditional_t<
+              QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
+              SageAttnFwdCommonQScaleKargs,
+              std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE,
+                                 SageAttnFwdGroupBlockScaleKargs,
+                                 SageAttnFwdEmptyKargs<2>>>,
           std::conditional_t<kSkipMinSeqlenQ,
                              SageAttnFwdSkipMinSeqlenQKargs,
                              SageAttnFwdEmptyKargs<3>>
@@ -296,11 +325,19 @@ struct SageAttnFwdKernel
                   ck_tile::index_t nhead_stride_v,
                   ck_tile::index_t nhead_stride_bias,
                   ck_tile::index_t nhead_stride_o,
+                  ck_tile::index_t nhead_stride_q_descale,
+                  ck_tile::index_t nhead_stride_k_descale,
+                  ck_tile::index_t nhead_stride_v_descale,
                   ck_tile::index_t batch_stride_q,
                   ck_tile::index_t batch_stride_k,
                   ck_tile::index_t batch_stride_v,
                   ck_tile::index_t batch_stride_bias,
                   ck_tile::index_t batch_stride_o,
+                  ck_tile::index_t batch_stride_q_descale,
+                  ck_tile::index_t batch_stride_k_descale,
+                  ck_tile::index_t batch_stride_v_descale,
+                  ck_tile::index_t block_scale_size_q,
+                  ck_tile::index_t block_scale_size_kv,
                   ck_tile::index_t window_size_left,
                   ck_tile::index_t window_size_right,
                   ck_tile::index_t mask_type,
@@ -361,6 +398,23 @@ struct SageAttnFwdKernel
             kargs.q_descale_ptr = q_descale_ptr;
             kargs.k_descale_ptr = k_descale_ptr;
             kargs.v_descale_ptr = v_descale_ptr;
+        }
+        if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
+        {
+            kargs.q_descale_ptr = q_descale_ptr;
+            kargs.k_descale_ptr = k_descale_ptr;
+            kargs.v_descale_ptr = v_descale_ptr;
+
+            kargs.nhead_stride_q_descale = nhead_stride_q_descale;
+            kargs.nhead_stride_k_descale = nhead_stride_k_descale;
+            kargs.nhead_stride_v_descale = nhead_stride_v_descale;
+
+            kargs.batch_stride_q_descale = batch_stride_q_descale;
+            kargs.batch_stride_k_descale = batch_stride_k_descale;
+            kargs.batch_stride_v_descale = batch_stride_v_descale;
+
+            kargs.block_scale_size_q  = block_scale_size_q;
+            kargs.block_scale_size_kv = block_scale_size_kv;
         }
         // logits_soft_cap is always disabled
 
@@ -571,6 +625,13 @@ struct SageAttnFwdKernel
                   ck_tile::index_t nhead_stride_v,
                   ck_tile::index_t nhead_stride_bias,
                   ck_tile::index_t nhead_stride_o,
+                  ck_tile::index_t nhead_stride_q_descale,
+                  ck_tile::index_t nhead_stride_k_descale,
+                  ck_tile::index_t nhead_stride_v_descale,
+                  ck_tile::index_t block_scale_size_q,
+                  ck_tile::index_t block_scale_size_kv,
+                  const void* block_scale_seqstart_q_ptr,
+                  const void* block_scale_seqstart_k_ptr,
                   ck_tile::index_t window_size_left,
                   ck_tile::index_t window_size_right,
                   ck_tile::index_t mask_type,
@@ -632,6 +693,24 @@ struct SageAttnFwdKernel
             kargs.q_descale_ptr = q_descale_ptr;
             kargs.k_descale_ptr = k_descale_ptr;
             kargs.v_descale_ptr = v_descale_ptr;
+        }
+        if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
+        {
+            kargs.q_descale_ptr = q_descale_ptr;
+            kargs.k_descale_ptr = k_descale_ptr;
+            kargs.v_descale_ptr = v_descale_ptr;
+
+            kargs.nhead_stride_q_descale = nhead_stride_q_descale;
+            kargs.nhead_stride_k_descale = nhead_stride_k_descale;
+            kargs.nhead_stride_v_descale = nhead_stride_v_descale;
+
+            kargs.block_scale_size_q  = block_scale_size_q;
+            kargs.block_scale_size_kv = block_scale_size_kv;
+
+            kargs.block_scale_seqstart_q_ptr =
+                reinterpret_cast<const int32_t*>(block_scale_seqstart_q_ptr);
+            kargs.block_scale_seqstart_k_ptr =
+                reinterpret_cast<const int32_t*>(block_scale_seqstart_k_ptr);
         }
         // logits_soft_cap is always disabled
         if constexpr(kSkipMinSeqlenQ)
@@ -946,11 +1025,14 @@ struct SageAttnFwdKernel
             const index_t i_m0 = amd_wave_read_first_lane(i_tile_m * SageAttnPipeline::kM0);
             const index_t i_n1 = amd_wave_read_first_lane(i_tile_n * SageAttnPipeline::kN1);
 
-            long_index_t batch_offset_q    = 0;
-            long_index_t batch_offset_k    = 0;
-            long_index_t batch_offset_v    = 0;
-            long_index_t batch_offset_bias = 0;
-            long_index_t batch_offset_o    = 0;
+            long_index_t batch_offset_q         = 0;
+            long_index_t batch_offset_k         = 0;
+            long_index_t batch_offset_v         = 0;
+            long_index_t batch_offset_bias      = 0;
+            long_index_t batch_offset_o         = 0;
+            long_index_t batch_offset_q_descale = 0;
+            long_index_t batch_offset_k_descale = 0;
+            long_index_t batch_offset_v_descale = 0;
 
             if constexpr(kIsGroupMode)
             {
@@ -972,6 +1054,14 @@ struct SageAttnFwdKernel
                 if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
                 {
                     batch_offset_bias = query_start * kargs.stride_bias;
+                }
+                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
+                {
+                    const long_index_t bquery_start = kargs.block_scale_seqstart_q_ptr[i_batch];
+                    const long_index_t bkey_start   = kargs.block_scale_seqstart_k_ptr[i_batch];
+                    batch_offset_q_descale          = bquery_start;
+                    batch_offset_k_descale          = bkey_start;
+                    batch_offset_v_descale          = bkey_start;
                 }
                 batch_offset_o = query_start * kargs.stride_o;
 
@@ -1030,6 +1120,15 @@ struct SageAttnFwdKernel
                 {
                     batch_offset_bias =
                         static_cast<long_index_t>(i_batch) * kargs.batch_stride_bias;
+                }
+                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
+                {
+                    batch_offset_q_descale =
+                        static_cast<long_index_t>(i_batch) * kargs.batch_stride_q_descale;
+                    batch_offset_k_descale =
+                        static_cast<long_index_t>(i_batch) * kargs.batch_stride_k_descale;
+                    batch_offset_v_descale =
+                        static_cast<long_index_t>(i_batch) * kargs.batch_stride_v_descale;
                 }
                 batch_offset_o = static_cast<long_index_t>(i_batch) * kargs.batch_stride_o;
 
@@ -1298,6 +1397,53 @@ struct SageAttnFwdKernel
                                               variant_params,
                                               block_indices,
                                               smem_ptr);
+                }
+                else if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
+                {
+                    const float* q_descale_ptr =
+                        reinterpret_cast<const float*>(kargs.q_descale_ptr) +
+                        static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q_descale +
+                        batch_offset_q_descale;
+                    const float* k_descale_ptr =
+                        reinterpret_cast<const float*>(kargs.k_descale_ptr) +
+                        static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
+                            kargs.nhead_stride_k_descale +
+                        batch_offset_k_descale;
+                    const float* v_descale_ptr =
+                        reinterpret_cast<const float*>(kargs.v_descale_ptr) +
+                        static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
+                            kargs.nhead_stride_v_descale +
+                        batch_offset_v_descale;
+
+                    size_t idx      = i_m0 / kargs.block_scale_size_q;
+                    float q_descale = q_descale_ptr[idx];
+
+                    // BLOCKSCALE: P is scaled in exp2(x+shift) where shift=7 or 8
+                    // Both P and rowsum are scaled by 2^shift, canceling in normalization
+                    // No additional scaling needed in p_compute_element_func or o_acc_element_func
+
+                    return SageAttnPipeline{}(
+                        q_dram_window,
+                        identity{}, // q_element_func
+                        k_dram_window,
+                        identity{}, // k_element_func
+                        v_dram_window,
+                        identity{}, // v_element_func
+                        bias_dram_window,
+                        identity{},               // bias_element_func
+                        scales<float>(q_descale), // s_acc_element_func
+                        identity{}, // p_compute_element_func - No scaling (done in exp2)
+                        identity{}, // o_acc_element_func - No dequant (canceled by rowsum)
+                        mask,
+                        position_encoding,
+                        kargs.scale_s,
+                        variant,
+                        variant_params,
+                        block_indices,
+                        smem_ptr,
+                        k_descale_ptr,
+                        v_descale_ptr,
+                        kargs.block_scale_size_kv);
                 }
                 else
                 {
