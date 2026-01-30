@@ -795,7 +795,13 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
 
     @classmethod
     def supported_dtypes(cls) -> Tuple[str]:
-        return cls._DT_FP32 + cls._DT_FP16_BF16 + cls._DT_FP8 + cls._DT_FP8BF16 + cls._DT_I8FP8BF16
+        return (
+            cls._DT_FP32
+            + cls._DT_FP16_BF16
+            + cls._DT_FP8
+            + cls._DT_FP8BF16
+            + cls._DT_I8FP8BF16
+        )
 
     # TODO: design a more practical way to do it
     # this is current supported tile size per hdim
@@ -804,20 +810,20 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
         if dtype in cls._DT_FP32:
             return {
                 #                             bm0, bn0, bk0, bn1, bk1,
-                ( 64,  64) : [SageAttnFwdTileSize( 64,  64,  32,  64,  32,  64,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
                 (128, 128) : [SageAttnFwdTileSize(128,  64,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
             }  # fmt: skip
         elif dtype in cls._DT_FP16_BF16:
             return {
-                ( 64,  64) : [SageAttnFwdTileSize( 16,  32,  64,  64,  32,  64,  1, 1, 1,  1, 1, 1,  16, 16, 32,  16, 16, 32,  -1),
-                              SageAttnFwdTileSize( 32,  32,  64,  64,  32,  64,  1, 1, 1,  1, 1, 1,  32, 32, 16,  32, 32, 16,  -1),
-                              SageAttnFwdTileSize(128,  64,  32,  64,  32,  64,  4, 1, 1,  4, 1, 1,  32, 32, 16,  32, 32, 16,  -1)],
                 (128, 128) : [SageAttnFwdTileSize( 16,  32,  64, 128,  32, 128,  1, 1, 1,  1, 1, 1,  16, 16, 32,  16, 16, 32,  -1),
                               SageAttnFwdTileSize( 32,  32, 128, 128,  32, 128,  1, 1, 1,  1, 1, 1,  32, 32, 16,  32, 32, 16,  -1),
                               SageAttnFwdTileSize(128,  64,  32, 128,  16, 128,  4, 1, 1,  4, 1, 1,  32, 32, 16,  32, 32, 16,  -1),
                               SageAttnFwdTileSize(128, 128,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 16,  32, 32, 16,  -1)],
             }  # fmt: skip
-        elif dtype in cls._DT_FP8 or dtype in cls._DT_FP8BF16 or dtype in cls._DT_I8FP8BF16:
+        elif (
+            dtype in cls._DT_FP8
+            or dtype in cls._DT_FP8BF16
+            or dtype in cls._DT_I8FP8BF16
+        ):
             return {
                 ( 64,  64) : [SageAttnFwdTileSize(128,  64,  32,  64,  32,  64,  2, 1, 1,  2, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
                 (128, 128) : [SageAttnFwdTileSize(128, 128,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
@@ -876,12 +882,12 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
                 get_mask_map(mask_impl).keys(),
                 ["no", "pertensor"],
             ):
-                if hdim == 64:
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
-                else:
-                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                # if hdim == 64:
+                #     pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                #     pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                # else:
+                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
         elif dtype in ["fp8", "fp8fp16", "bf8"]:
             # TODO
             pass

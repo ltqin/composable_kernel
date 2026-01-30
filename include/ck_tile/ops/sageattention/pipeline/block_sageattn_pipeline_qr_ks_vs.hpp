@@ -189,14 +189,17 @@ struct BlockSageAttentionPipelineQRKSVS
         auto q = load_tile(q_dram_window);
 
         using SaccBlockTileType = decltype(gemm_0.MakeCBlockTile());
-        auto s_acc              = SaccBlockTileType{};
+        auto s_acc_gemm         = SaccBlockTileType{};
 
         // reduction function for softmax
         const auto f_max = [](auto e0, auto e1) { return max(e0, e1); };
         const auto f_sum = [](auto e0, auto e1) { return e0 + e1; };
 
         // infer Sacc, S, P, M, L, Oacc type
-        using SBlockTileType = decltype(cast_tile<SMPLComputeDataType>(s_acc));
+        using SBlockTileType = std::conditional_t<
+            std::is_same_v<typename decltype(s_acc_gemm)::DataType, SaccDataType>,
+            decltype(s_acc_gemm),
+            decltype(cast_tile<SaccDataType>(s_acc_gemm))>;
 
         using MLBlockTileType = decltype(block_tile_reduce<SMPLComputeDataType>(
             SBlockTileType{}, sequence<1>{}, f_max, SMPLComputeDataType{0}));
@@ -303,7 +306,7 @@ struct BlockSageAttentionPipelineQRKSVS
             auto k_block_tile = load_tile(k_dram_window);
             {
                 move_tile_window(k_dram_window, {0, kK0});
-                clear_tile(s_acc); // initialize C
+                clear_tile(s_acc_gemm); // initialize C
                 store_tile(k_lds_window, tile_elementwise_in(k_element_func, k_block_tile));
                 k_block_tile = load_tile(k_dram_window);
             }
@@ -324,7 +327,7 @@ struct BlockSageAttentionPipelineQRKSVS
             {
                 static_for<0, k0_loops - 2, 1>{}([&](auto i_k0) {
                     block_sync_lds();
-                    gemm_0(s_acc,
+                    gemm_0(s_acc_gemm,
                            get_slice_tile(q_tile,
                                           sequence<0, i_k0 * kK0>{},
                                           sequence<kM0, (i_k0 + 1) * kK0>{}),
@@ -343,7 +346,7 @@ struct BlockSageAttentionPipelineQRKSVS
             const auto v_prefetch = load_tile(v_dram_window); // prefetch load v tile
             {                                                 // tail
                 block_sync_lds();
-                gemm_0(s_acc,
+                gemm_0(s_acc_gemm,
                        get_slice_tile(q_tile,
                                       sequence<0, (k0_loops - 2) * kK0>{},
                                       sequence<kM0, (k0_loops - 1) * kK0>{}),
@@ -354,13 +357,26 @@ struct BlockSageAttentionPipelineQRKSVS
                 store_tile(k_lds_window, tile_elementwise_in(k_element_func, k_block_tile));
                 block_sync_lds();
 
-                gemm_0(s_acc,
+                gemm_0(s_acc_gemm,
                        get_slice_tile(q_tile,
                                       sequence<0, (k0_loops - 1) * kK0>{},
                                       sequence<kM0, k0_loops * kK0>{}),
                        k_lds_window);
                 schedule_gemm0();
             }
+
+            // Convert GEMM output to SaccDataType for softmax (if needed)
+            auto s_acc = [&]() {
+                using GemmDataType = typename decltype(s_acc_gemm)::DataType;
+                if constexpr(std::is_same_v<GemmDataType, SaccDataType>)
+                {
+                    return s_acc_gemm; // No conversion needed (e.g., float -> float)
+                }
+                else
+                {
+                    return cast_tile<SaccDataType>(s_acc_gemm); // Convert (e.g., int32 -> float)
+                }
+            }();
 
             // STAGE 2, scale_s, add bias, mask, softmax
             if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)

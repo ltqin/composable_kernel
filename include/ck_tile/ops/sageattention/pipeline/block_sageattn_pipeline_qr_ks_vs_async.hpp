@@ -228,14 +228,17 @@ struct BlockSageAttentionPipelineQRKSVSAsync
         __builtin_amdgcn_sched_barrier(0);
 
         using SaccBlockTileType = decltype(gemm_0.MakeCBlockTile());
-        auto s_acc              = SaccBlockTileType{};
+        auto s_acc_gemm         = SaccBlockTileType{};
 
         // reduction function for softmax
         const auto f_max = [](auto e0, auto e1) { return max(e0, e1); };
         const auto f_sum = [](auto e0, auto e1) { return e0 + e1; };
 
         // infer Sacc, S, P, M, L, Oacc type
-        using SBlockTileType = decltype(cast_tile<SMPLComputeDataType>(s_acc));
+        using SBlockTileType = std::conditional_t<
+            std::is_same_v<typename decltype(s_acc_gemm)::DataType, SaccDataType>,
+            decltype(s_acc_gemm),
+            decltype(cast_tile<SaccDataType>(s_acc_gemm))>;
 
         using MLBlockTileType = decltype(block_tile_reduce<SMPLComputeDataType>(
             SBlockTileType{}, sequence<1>{}, f_max, SMPLComputeDataType{0}));
@@ -331,7 +334,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
         do
         {
             // STAGE 1, QK gemm
-            clear_tile(s_acc); // initialize C
+            clear_tile(s_acc_gemm); // initialize C
             if constexpr(k0_loops > 1)
             {
                 static_for<0, k0_loops - 1, 1>{}([&](auto i_k0) {
@@ -346,7 +349,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                     async_load_fence(k_dram_window.get_num_of_access());
                     __builtin_amdgcn_s_barrier();
                     __builtin_amdgcn_sched_barrier(0);
-                    gemm_0(s_acc,
+                    gemm_0(s_acc_gemm,
                            get_slice_tile(
                                q, sequence<0, i_k0 * kK0>{}, sequence<kM0, (i_k0 + 1) * kK0>{}),
                            get_slice_tile(k_lds_load,
@@ -368,7 +371,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
             __builtin_amdgcn_sched_barrier(0);
             { // tail
                 gemm_0(
-                    s_acc,
+                    s_acc_gemm,
                     get_slice_tile(
                         q, sequence<0, (k0_loops - 1) * kK0>{}, sequence<kM0, k0_loops * kK0>{}),
                     get_slice_tile(k_lds_load,
@@ -376,6 +379,19 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                                    sequence<(LdsSeq.at(number<k0_loops - 1>{}) + 1) * kN0, kK0>{}));
             }
             __builtin_amdgcn_sched_barrier(1);
+
+            // Convert GEMM output to SaccDataType for softmax (if needed)
+            auto s_acc = [&]() {
+                using GemmDataType = typename decltype(s_acc_gemm)::DataType;
+                if constexpr(std::is_same_v<GemmDataType, SaccDataType>)
+                {
+                    return s_acc_gemm; // No conversion needed (e.g., float -> float)
+                }
+                else
+                {
+                    return cast_tile<SaccDataType>(s_acc_gemm); // Convert (e.g., int32 -> float)
+                }
+            }();
 
             // STAGE 2, scale_s, add bias, mask, softmax
             if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)

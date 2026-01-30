@@ -60,10 +60,17 @@ struct BlockSageAttnPipelineQRCustomPolicy</* QLoadOnce = */ true>
     template <typename Problem>
     CK_TILE_HOST_DEVICE static constexpr auto GetQKBlockGemm()
     {
+        // int8 MFMA accumulates to int32, but SaccDataType is float for softmax
+        using GemmAccDataType =
+            std::conditional_t<std::is_same_v<typename Problem::QDataType, int8_t> ||
+                                   std::is_same_v<typename Problem::QDataType, signed char>,
+                               int32_t,
+                               typename Problem::SaccDataType>;
+
         using GemmProblem =
             BlockGemmProblem<typename Problem::QDataType,
                              typename Problem::KDataType,
-                             typename Problem::SaccDataType,
+                             GemmAccDataType,
                              Problem::kNumGemm0Warps * get_warp_size(),
                              TileGemmShape<sequence<Problem::BlockSageAttnShape::kM0,
                                                     Problem::BlockSageAttnShape::kN0,
@@ -86,6 +93,21 @@ struct BlockSageAttnPipelineQRCustomPolicy</* QLoadOnce = */ true>
                 return WarpGemmMfmaFp8Fp8F32M32N32K32SwizzleBTransposedCDistribution<
                     swizzle_factor>{};
             }
+            else if constexpr(get_warp_size() == 64 &&
+                              (std::is_same_v<typename Problem::QDataType, int8_t> ||
+                               std::is_same_v<typename Problem::QDataType, signed char>) &&
+                              (std::is_same_v<typename Problem::KDataType, int8_t> ||
+                               std::is_same_v<typename Problem::KDataType, signed char>))
+            {
+                static_assert(Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<0>{}) == 32);
+                static_assert(Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<1>{}) == 32);
+                static_assert(Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<2>{}) == 32);
+
+                // Use special int8 MFMA with K iteration (similar to FP8)
+                constexpr index_t swizzle_factor = 4;
+                return WarpGemmMfmaI8I8I32M32N32K32SwizzleBTransposedCDistribution<
+                    swizzle_factor>{};
+            }
             else
             {
                 constexpr bool SwizzleA =
@@ -93,7 +115,7 @@ struct BlockSageAttnPipelineQRCustomPolicy</* QLoadOnce = */ true>
                 return WarpGemmDispatcher<
                     typename Problem::QDataType,
                     typename Problem::KDataType,
-                    typename Problem::SaccDataType,
+                    GemmAccDataType,
                     Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<0>{}),
                     Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<1>{}),
                     Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<2>{}),
@@ -105,7 +127,7 @@ struct BlockSageAttnPipelineQRCustomPolicy</* QLoadOnce = */ true>
         using BlockGemmPolicy = BlockGemmARegBSmemCRegV2CustomPolicy<
             typename Problem::QDataType,
             typename Problem::KDataType,
-            typename Problem::SaccDataType,
+            GemmAccDataType,
             typename Problem::BlockSageAttnShape::Gemm0BlockWarps,
             decltype(warp_gemm)>;
 
@@ -209,10 +231,17 @@ struct BlockSageAttnPipelineQRCustomPolicy</* QLoadOnce = */ false>
     template <typename Problem>
     CK_TILE_HOST_DEVICE static constexpr auto GetQKBlockGemm()
     {
+        // int8 MFMA accumulates to int32, but SaccDataType is float for softmax
+        using GemmAccDataType =
+            std::conditional_t<std::is_same_v<typename Problem::QDataType, int8_t> ||
+                                   std::is_same_v<typename Problem::QDataType, signed char>,
+                               int32_t,
+                               typename Problem::SaccDataType>;
+
         using GemmProblem =
             BlockGemmProblem<typename Problem::QDataType,
                              typename Problem::KDataType,
-                             typename Problem::SaccDataType,
+                             GemmAccDataType,
                              Problem::kNumGemm0Warps * get_warp_size(),
                              TileGemmShape<sequence<Problem::BlockSageAttnShape::kM0,
                                                     Problem::BlockSageAttnShape::kN0,
@@ -235,6 +264,21 @@ struct BlockSageAttnPipelineQRCustomPolicy</* QLoadOnce = */ false>
                 return WarpGemmMfmaFp8Fp8F32M32N32K32SwizzleBTransposedCDistribution<
                     swizzle_factor>{};
             }
+            else if constexpr(get_warp_size() == 64 &&
+                              (std::is_same_v<typename Problem::QDataType, int8_t> ||
+                               std::is_same_v<typename Problem::QDataType, signed char>) &&
+                              (std::is_same_v<typename Problem::KDataType, int8_t> ||
+                               std::is_same_v<typename Problem::KDataType, signed char>))
+            {
+                static_assert(Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<0>{}) == 32);
+                static_assert(Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<1>{}) == 32);
+                static_assert(Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<2>{}) == 32);
+
+                // Use special int8 MFMA with K iteration (similar to FP8)
+                constexpr index_t swizzle_factor = 4;
+                return WarpGemmMfmaI8I8I32M32N32K32SwizzleBTransposedCDistribution<
+                    swizzle_factor>{};
+            }
             else
             {
                 constexpr bool SwizzleA =
@@ -242,7 +286,7 @@ struct BlockSageAttnPipelineQRCustomPolicy</* QLoadOnce = */ false>
                 return WarpGemmDispatcher<
                     typename Problem::QDataType,
                     typename Problem::KDataType,
-                    typename Problem::SaccDataType,
+                    GemmAccDataType,
                     Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<0>{}),
                     Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<1>{}),
                     Problem::BlockSageAttnShape::Gemm0WarpTile::at(number<2>{}),
@@ -254,7 +298,7 @@ struct BlockSageAttnPipelineQRCustomPolicy</* QLoadOnce = */ false>
         using BlockGemmPolicy = BlockGemmASmemBSmemCRegV1CustomPolicy<
             typename Problem::QDataType,
             typename Problem::KDataType,
-            typename Problem::SaccDataType,
+            GemmAccDataType,
             typename Problem::BlockSageAttnShape::Gemm0BlockWarps,
             decltype(warp_gemm)>;
 
