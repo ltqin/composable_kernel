@@ -814,10 +814,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
             }  # fmt: skip
         elif dtype in cls._DT_FP16_BF16:
             return {
-                (128, 128) : [SageAttnFwdTileSize( 16,  32,  64, 128,  32, 128,  1, 1, 1,  1, 1, 1,  16, 16, 32,  16, 16, 32,  -1),
-                              SageAttnFwdTileSize( 32,  32, 128, 128,  32, 128,  1, 1, 1,  1, 1, 1,  32, 32, 16,  32, 32, 16,  -1),
-                              SageAttnFwdTileSize(128,  64,  32, 128,  16, 128,  4, 1, 1,  4, 1, 1,  32, 32, 16,  32, 32, 16,  -1),
-                              SageAttnFwdTileSize(128, 128,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 16,  32, 32, 16,  -1)],
+                (128, 128) : [SageAttnFwdTileSize(128, 128,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 16,  32, 32, 16,  -1)],
             }  # fmt: skip
         elif (
             dtype in cls._DT_FP8
@@ -882,12 +879,12 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
                 get_mask_map(mask_impl).keys(),
                 ["no", "pertensor"],
             ):
-                # if hdim == 64:
-                #     pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
-                #     pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
-                # else:
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                if hdim == 64:
+                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                else:
+                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
         elif dtype in ["fp8", "fp8fp16", "bf8"]:
             # TODO
             pass
