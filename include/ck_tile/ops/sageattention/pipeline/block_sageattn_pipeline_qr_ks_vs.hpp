@@ -198,17 +198,16 @@ struct BlockSageAttentionPipelineQRKSVS
         auto q = load_tile(q_dram_window);
 
         using SaccBlockTileType = decltype(gemm_0.MakeCBlockTile());
-        auto s_acc_gemm         = SaccBlockTileType{};
 
         // reduction function for softmax
         const auto f_max = [](auto e0, auto e1) { return max(e0, e1); };
         const auto f_sum = [](auto e0, auto e1) { return e0 + e1; };
 
         // infer Sacc, S, P, M, L, Oacc type
-        using SBlockTileType = std::conditional_t<
-            std::is_same_v<typename decltype(s_acc_gemm)::DataType, SaccDataType>,
-            decltype(s_acc_gemm),
-            decltype(cast_tile<SaccDataType>(s_acc_gemm))>;
+        using SBlockTileType =
+            std::conditional_t<std::is_same_v<typename SaccBlockTileType::DataType, SaccDataType>,
+                               SaccBlockTileType,
+                               decltype(cast_tile<SaccDataType>(SaccBlockTileType{}))>;
 
         using MLBlockTileType = decltype(block_tile_reduce<SMPLComputeDataType>(
             SBlockTileType{}, sequence<1>{}, f_max, SMPLComputeDataType{0}));
@@ -318,7 +317,7 @@ struct BlockSageAttentionPipelineQRKSVS
                 k_dram_block_window.get_window_origin(),
                 Policy::template MakeKDramTileDistribution<Problem>()); // K DRAM tile window for
                                                                         // load
-
+            auto s_acc_gemm   = SaccBlockTileType{};
             auto k_block_tile = load_tile(k_dram_window);
             {
                 move_tile_window(k_dram_window, {0, kK0});
@@ -556,30 +555,39 @@ struct BlockSageAttentionPipelineQRKSVS
             constexpr auto o_spans = decltype(o_acc)::get_distributed_spans();
             sweep_tile_span(o_spans[number<0>{}], [&](auto idx0) {
                 constexpr auto i_idx = make_tuple(idx0);
+
+                // Conditional Rescale: only rescale if max changed
+                const auto m_new       = get_validated_m(m[i_idx]);
+                const bool max_changed = (m_old[i_idx] != m_new);
+
+                if(max_changed)
+                {
 #if CK_TILE_FMHA_FWD_FAST_EXP2
-                const auto tmp = [&]() {
-                    if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS ||
-                                 BiasEnum == BlockAttentionBiasEnum::ALIBI)
-                    {
-                        return exp2(m_old[i_idx] - get_validated_m(m[i_idx]));
-                    }
-                    else
-                    {
-                        auto row_max = scale_s * get_validated_m(m[i_idx]);
-                        return exp2(scale_s * m_old[i_idx] - row_max);
-                    }
-                }();
+                    const auto tmp = [&]() {
+                        if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS ||
+                                     BiasEnum == BlockAttentionBiasEnum::ALIBI)
+                        {
+                            return exp2(m_old[i_idx] - m_new);
+                        }
+                        else
+                        {
+                            auto row_max = scale_s * m_new;
+                            return exp2(scale_s * m_old[i_idx] - row_max);
+                        }
+                    }();
 #else
-                const auto tmp       = exp(m_old[i_idx] - get_validated_m(m[i_idx]));
+                    const auto tmp = exp(m_old[i_idx] - m_new);
 #endif
-                l(i_idx) = tmp * l[i_idx] + rowsum_p[i_idx];
-                sweep_tile_span(o_spans[number<1>{}], [&](auto idx1) {
-                    constexpr auto i_j_idx = make_tuple(idx0, idx1);
-                    // FIXME: this use different equation from FA v2 paper,
-                    // but produce correc result.
-                    // Is the equation wrong?
-                    o_acc(i_j_idx) *= tmp;
-                });
+                    // Rescale l and o_acc
+                    l(i_idx) *= tmp;
+                    sweep_tile_span(o_spans[number<1>{}], [&](auto idx1) {
+                        constexpr auto i_j_idx = make_tuple(idx0, idx1);
+                        o_acc(i_j_idx) *= tmp;
+                    });
+                }
+
+                // Always accumulate new contribution
+                l(i_idx) += rowsum_p[i_idx];
             });
 
             block_sync_lds();

@@ -755,26 +755,27 @@ class CompatibilityRuleFactoryGfx9(CompatibilityRuleFactory):
     def get_rules(cls) -> List[CompatibilityRule]:
         rules = CompatibilityRuleFactory.get_rules()
 
-        def check_hdim_tile(
-            problem_ctx: ProblemContext, kernel_ctx: KernelContext
-        ) -> bool:
-            if problem_ctx.dtype != "fp32":
-                # TODO: update if >=gfx11 archs get qr_async support
-                if kernel_ctx.pipeline.tag in cls._AVAILABLE_PIPELINES and (
-                    (
-                        (problem_ctx.hdim, problem_ctx.hdim_v) == (128, 128)
-                        and kernel_ctx.tile.F_bn0 != 128
-                    )
-                    or (
-                        (problem_ctx.hdim, problem_ctx.hdim_v) != (128, 128)
-                        and kernel_ctx.tile.F_bm0 != 128
-                    )
-                ):
-                    # qr_async only support kn0=128 tile size when hdim is 128
-                    return False
-            return True
+        # NOTE: Temporarily disabled to allow bn0=64 configurations
+        # def check_hdim_tile(
+        #     problem_ctx: ProblemContext, kernel_ctx: KernelContext
+        # ) -> bool:
+        #     if problem_ctx.dtype != "fp32":
+        #         # TODO: update if >=gfx11 archs get qr_async support
+        #         if kernel_ctx.pipeline.tag in cls._AVAILABLE_PIPELINES and (
+        #             (
+        #                 (problem_ctx.hdim, problem_ctx.hdim_v) == (128, 128)
+        #                 and kernel_ctx.tile.F_bn0 != 128
+        #             )
+        #             or (
+        #                 (problem_ctx.hdim, problem_ctx.hdim_v) != (128, 128)
+        #                 and kernel_ctx.tile.F_bm0 != 128
+        #             )
+        #         ):
+        #             # qr_async only support kn0=128 tile size when hdim is 128
+        #             return False
+        #     return True
 
-        rules.append(check_hdim_tile)
+        # rules.append(check_hdim_tile)
         return rules
 
 
@@ -809,7 +810,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
     def get_hdim_tile_size_dict(cls, dtype: str) -> Optional[dict]:
         if dtype in cls._DT_FP32:
             return {
-                #                             bm0, bn0, bk0, bn1, bk1,
+                #                                 bm0, bn0, bk0, bn1, bk1,
                 (128, 128) : [SageAttnFwdTileSize(128,  64,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
             }  # fmt: skip
         elif dtype in cls._DT_FP16_BF16:
@@ -823,7 +824,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
         ):
             return {
                 ( 64,  64) : [SageAttnFwdTileSize(128,  64,  32,  64,  32,  64,  2, 1, 1,  2, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
-                (128, 128) : [SageAttnFwdTileSize(128, 128,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
+                (128, 128) : [SageAttnFwdTileSize(128,  64,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
             }  # fmt: skip
         else:
             raise ValueError(f"unsupported dtype={dtype}")
