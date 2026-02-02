@@ -10,9 +10,10 @@ namespace ck_tile {
 // This class is used for codegen pattern matching
 enum class BlockAttentionQuantScaleEnum
 {
-    NO_SCALE  = 0,
-    PERTENSOR = 1,
-    BLOCKSCALE,
+    NO_SCALE   = 0,
+    PERTENSOR  = 1,
+    BLOCKSCALE = 2,
+    PERWARP    = 3,
 };
 
 template <BlockAttentionQuantScaleEnum>
@@ -32,6 +33,11 @@ template <>
 struct BlockAttentionQuantScaleEnumToStr<BlockAttentionQuantScaleEnum::BLOCKSCALE>
 {
     static constexpr const char* name = "blockscale";
+};
+template <>
+struct BlockAttentionQuantScaleEnumToStr<BlockAttentionQuantScaleEnum::PERWARP>
+{
+    static constexpr const char* name = "perwarp";
 };
 
 } // namespace ck_tile
