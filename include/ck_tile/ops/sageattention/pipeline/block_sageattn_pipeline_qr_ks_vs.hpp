@@ -695,6 +695,19 @@ struct BlockSageAttentionPipelineQRKSVS
             // V is col-major, each column (channel) has its own scale
             // o_acc shape: [M0, N1] where N1 is hdim_v
             // v_descale_ptr points to per-channel scales [hdim_v]
+
+            // Load v_descale to LDS for better memory access pattern
+            // Declared here to reuse K/V LDS space (they're no longer needed)
+            __shared__ float v_descale_lds[kN1];
+
+            // Cooperatively load v_descale to LDS
+            const index_t num_threads = kBlockSize;
+            for(index_t i = threadIdx.x; i < kN1; i += num_threads)
+            {
+                v_descale_lds[i] = v_descale_ptr[i];
+            }
+            block_sync_lds();
+
             constexpr auto o_tmp_spans = decltype(o_acc)::get_distributed_spans();
 
             sweep_tile_span(o_tmp_spans[number<0>{}], [&](auto idx0) {
@@ -704,7 +717,7 @@ struct BlockSageAttentionPipelineQRKSVS
                     const auto tile_idx = get_x_indices_from_distributed_indices(
                         o_acc.get_tile_distribution(), i_j_idx);
                     const index_t channel_idx = tile_idx.at(number<1>{});
-                    const float v_scale       = v_descale_ptr[channel_idx];
+                    const float v_scale       = v_descale_lds[channel_idx];
                     o_acc(i_j_idx) *= v_scale;
                 });
             });
