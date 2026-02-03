@@ -196,6 +196,12 @@ fwd_result sageattn_fwd_run(mode_enum mode,
 
     quant_scale_info qscale = quant_scale_info::decode(qscale_str);
 
+    // Constraint: per-warp quantization requires V to be col-major
+    if(qscale.type == quant_scale_enum::perwarp)
+    {
+        is_v_rowmajor = false;
+    }
+
     // Note: block_scale_size_q_ and block_scale_size_kv_ should be greater than or equal to the
     // compute block size
     // PERWARP mode: Q=32 (warp size), KV=64 (2x warp size)
@@ -356,8 +362,11 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         (qscale.type == quant_scale_enum::blockscale || qscale.type == quant_scale_enum::perwarp)
             ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, num_block_scale_kv}
             : std::array<ck_tile::index_t, 3>{1, 1, 1});
+    // Per-warp V uses per-channel scale (col-major layout)
     ck_tile::HostTensor<float> v_descale_host(
-        (qscale.type == quant_scale_enum::blockscale || qscale.type == quant_scale_enum::perwarp)
+        (qscale.type == quant_scale_enum::perwarp)
+            ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, hdim_v}
+        : (qscale.type == quant_scale_enum::blockscale)
             ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, num_block_scale_kv}
             : std::array<ck_tile::index_t, 3>{1, 1, 1});
 
@@ -459,6 +468,9 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             q_descale_host);
         ck_tile::FillUniformDistribution<float>{max_descale_k * 0.8f, max_descale_k, next_seed()}(
             k_descale_host);
+
+        // Per-warp V uses per-channel scale (shape: [batch, nhead_k, hdim_v])
+        // Blockscale V uses per-block scale (shape: [batch, nhead_k, num_block_scale_kv])
         ck_tile::FillUniformDistribution<float>{max_descale_v * 0.8f, max_descale_v, next_seed()}(
             v_descale_host);
     }
@@ -701,15 +713,22 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         {
             args.nhead_stride_q_descale = num_block_scale_q;
             args.nhead_stride_k_descale = num_block_scale_kv;
-            args.nhead_stride_v_descale = num_block_scale_kv;
-            args.block_scale_size_q     = block_scale_size_q_;
-            args.block_scale_size_kv    = block_scale_size_kv_;
+            // Per-warp V uses per-channel scale: stride = hdim_v
+            // Blockscale V uses per-block scale: stride = num_block_scale_kv
+            args.nhead_stride_v_descale =
+                (qscale.type == quant_scale_enum::perwarp) ? hdim_v : num_block_scale_kv;
+            args.block_scale_size_q  = block_scale_size_q_;
+            args.block_scale_size_kv = block_scale_size_kv_;
 
             if(mode == mode_enum::batch)
             {
                 args.batch_stride_q_descale = nhead * num_block_scale_q;
                 args.batch_stride_k_descale = nhead_k * num_block_scale_kv;
-                args.batch_stride_v_descale = nhead_k * num_block_scale_kv;
+                // Per-warp V uses per-channel scale: batch_stride = nhead_k * hdim_v
+                // Blockscale V uses per-block scale: batch_stride = nhead_k * num_block_scale_kv
+                args.batch_stride_v_descale = (qscale.type == quant_scale_enum::perwarp)
+                                                  ? nhead_k * hdim_v
+                                                  : nhead_k * num_block_scale_kv;
             }
             else // group mode
             {
@@ -1102,22 +1121,46 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             if(qscale.type == quant_scale_enum::blockscale ||
                qscale.type == quant_scale_enum::perwarp)
             {
-                const ck_tile::index_t v_offset =
-                    (mode == mode_enum::batch) ? 0 : block_scale_seqstart_k_host[wb];
-                ck_tile::
-                    reference_batched_quant_gemm<PDataType, VDataType, OaccDataType, ODataType>(
-                        p_host_ref,
-                        v_host_ref,
-                        o_host_ref,
-                        ck_tile::idx_identity{},
-                        [&](auto idx, auto value) {
-                            return ck_tile::type_convert<float>(value) *
-                                   v_descale_host(b_idx,
-                                                  std::get<0>(idx) / nr,
-                                                  v_offset +
-                                                      std::get<2>(idx) / block_scale_size_kv_);
-                        },
-                        ck_tile::idx_identity{});
+                if(qscale.type == quant_scale_enum::perwarp)
+                {
+                    // Per-warp V uses per-channel scale (col-major)
+                    // v_descale shape: [batch, nhead_k, hdim_v]
+                    // Access by channel index: std::get<1>(idx) is the hdim dimension
+                    ck_tile::
+                        reference_batched_quant_gemm<PDataType, VDataType, OaccDataType, ODataType>(
+                            p_host_ref,
+                            v_host_ref,
+                            o_host_ref,
+                            ck_tile::idx_identity{},
+                            [&](auto idx, auto value) {
+                                return ck_tile::type_convert<float>(value) *
+                                       v_descale_host(b_idx,
+                                                      std::get<0>(idx) / nr,
+                                                      std::get<1>(idx)); // channel index
+                            },
+                            ck_tile::idx_identity{});
+                }
+                else // blockscale
+                {
+                    // Blockscale V uses per-block scale
+                    // v_descale shape: [batch, nhead_k, num_block_scale_kv]
+                    const ck_tile::index_t v_offset =
+                        (mode == mode_enum::batch) ? 0 : block_scale_seqstart_k_host[wb];
+                    ck_tile::
+                        reference_batched_quant_gemm<PDataType, VDataType, OaccDataType, ODataType>(
+                            p_host_ref,
+                            v_host_ref,
+                            o_host_ref,
+                            ck_tile::idx_identity{},
+                            [&](auto idx, auto value) {
+                                return ck_tile::type_convert<float>(value) *
+                                       v_descale_host(b_idx,
+                                                      std::get<0>(idx) / nr,
+                                                      v_offset +
+                                                          std::get<2>(idx) / block_scale_size_kv_);
+                            },
+                            ck_tile::idx_identity{});
+                }
             }
             else
             {

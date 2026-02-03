@@ -672,25 +672,23 @@ struct BlockSageAttentionPipelineQRKSVSAsync
             }();
 
             float v_descale = 1.0f;
-            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                         QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
             {
                 // K and V share the same seqlen_k position within a block
                 const index_t kv_idx = (seqlen_k_start + i_total_loops * kN0) / block_scale_size_kv;
                 v_descale            = v_descale_ptr[kv_idx];
             }
             // STAGE 3, KV gemm
-            // For BLOCKSCALE/PERWARP mode, use temporary accumulator to apply v_descale
+            // For BLOCKSCALE mode, use temporary accumulator to apply v_descale
+            // For PERWARP mode, accumulate directly to o_acc (apply v_descale later per-channel)
             auto o_acc_tmp = decltype(o_acc){};
-            if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                         Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::PERWARP)
+            if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
             {
                 clear_tile(o_acc_tmp);
             }
             auto& o_acc_ = [&]() -> auto& {
                 if constexpr(Problem::QScaleEnum ==
-                                 ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                             Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::PERWARP)
+                             ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
                     return o_acc_tmp;
                 else
                     return o_acc;
@@ -768,9 +766,9 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                         sequence<(LdsSeq.at(number<k0_loops + k1_loops - 1>{}) + 1) * kN1, kK1>{}));
             }
 
-            // Apply v_descale for BLOCKSCALE/PERWARP mode
-            if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                         Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::PERWARP)
+            // Apply v_descale for BLOCKSCALE mode only
+            // PERWARP mode will apply per-channel v_descale after the loop
+            if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
             {
                 // P scaling is done in exp2(x+shift), both P and rowsum scaled by 2^shift
                 // They cancel in normalization, so just apply v_descale directly
@@ -778,6 +776,27 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                     [&](auto& y, const auto& x) { y += x * v_descale; }, o_acc, o_acc_tmp);
             }
         } while(i_total_loops < num_total_loop);
+
+        // Apply per-channel v_descale for PERWARP mode (after loop, before normalization)
+        if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::PERWARP)
+        {
+            // V is col-major, each column (channel) has its own scale
+            // o_acc shape: [M0, N1] where N1 is hdim_v
+            // v_descale_ptr points to per-channel scales [hdim_v]
+            constexpr auto o_tmp_spans = decltype(o_acc)::get_distributed_spans();
+
+            sweep_tile_span(o_tmp_spans[number<0>{}], [&](auto idx0) {
+                sweep_tile_span(o_tmp_spans[number<1>{}], [&](auto idx1) {
+                    constexpr auto i_j_idx = make_tuple(idx0, idx1);
+                    // Get the global tile index for the N1 (channel) dimension
+                    const auto tile_idx = get_x_indices_from_distributed_indices(
+                        o_acc.get_tile_distribution(), i_j_idx);
+                    const index_t channel_idx = tile_idx.at(number<1>{});
+                    const float v_scale       = v_descale_ptr[channel_idx];
+                    o_acc(i_j_idx) *= v_scale;
+                });
+            });
+        }
 
         // finally, O
         constexpr auto o_spans = decltype(o_acc)::get_distributed_spans();
