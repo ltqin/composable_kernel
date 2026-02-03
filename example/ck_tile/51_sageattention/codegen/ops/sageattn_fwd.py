@@ -843,49 +843,52 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
         if dtype in cls._DT_FP32:
             qscale = "no"
             skip = "f"  # skip: only false
-            for mask, bias in itertools.product(
+            for mask, bias, vlayout in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
+                ["row", "col"],
             ):
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "t", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "t", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
         elif dtype in cls._DT_FP16_BF16:
             qscale = "no"
             skip = "f"  # skip: only false
-            for mask, bias in itertools.product(
+            for mask, bias, vlayout in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
+                ["row", "col"],
             ):
                 if hdim == 256 and hdim_v == 256:
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
                     # the below two is used for hdim vectorize load
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
                 else:
                     if bias == "bias":
                         # TODO: rocm 6.2 compiler problem if using qr_async for bias case
-                        pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
-                        pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
                     else:
-                        pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
-                        pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
                     if receipt == 1 and bias != "bias":
-                        pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip # TODO: cover arbitraty hdim# fmt: skip
+                        pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip # TODO: cover arbitraty hdim# fmt: skip
         elif dtype in cls._DT_FP8BF16 or dtype in cls._DT_I8FP8BF16:
             # no need lse kernels
             bias = "no"  # bias: only no
             skip = "f"  # skip: only false
-            for mask, qscale in itertools.product(
+            for mask, qscale, vlayout in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 ["no", "pertensor", "blockscale", "perwarp"],
+                ["row", "col"],  # Support both row and col major layouts
             ):
                 if hdim == 64:
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
                 else:
-                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr_async", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "f", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
         elif dtype in ["fp8", "fp8fp16", "bf8"]:
             # TODO
             pass
@@ -939,22 +942,24 @@ class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
         if dtype in cls._DT_FP16_BF16:
             qscale = "no"
             skip = "f"  # skip: only false
-            for mask, bias in itertools.product(
+            for mask, bias, vlayout in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 BIAS_MAP.keys(),
+                ["row", "col"],  # Support both row and col major layouts
             ):
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
         elif dtype in cls._DT_FP8_FP8BF16 or dtype in cls._DT_I8FP8BF16:
             # no need lse kernels
             bias = "no"  # bias: only no
             skip = "f"  # skip: only false
-            for mask, qscale in itertools.product(
+            for mask, qscale, vlayout in itertools.product(
                 get_mask_map(mask_impl).keys(),
                 ["no", "pertensor", "blockscale", "perwarp"],
+                ["row", "col"],  # Support both row and col major layouts
             ):
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", "row", "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", bias, qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", bias, qscale, mask, skip, "f"))  # fmt: skip
         return pipelines
 
 
