@@ -688,8 +688,8 @@ struct BlockSageAttentionPipelineQRKSVSAsync
             // v_descale_ptr points to per-channel scales [hdim_v]
 
             // Load v_descale to LDS for better memory access pattern
-            // Declared here to reuse K/V LDS space (they're no longer needed)
-            __shared__ float v_descale_lds[kN1];
+            // Reuse K/V LDS space (they're no longer needed)
+            auto v_descale_lds = reinterpret_cast<float*>(smem_ptr);
 
             // Cooperatively load v_descale to LDS
             const index_t num_threads = kBlockSize;
