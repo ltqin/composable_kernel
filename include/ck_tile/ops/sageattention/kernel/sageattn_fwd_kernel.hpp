@@ -5,7 +5,6 @@
 
 #include "ck_tile/core.hpp"
 #include "ck_tile/ops/common.hpp"
-#include "ck_tile/ops/fmha/block/block_attention_bias_enum.hpp"
 #include "ck_tile/ops/fmha/block/block_attention_quant_scale_enum.hpp"
 #include "ck_tile/ops/fmha/block/block_masking.hpp"
 #include "ck_tile/ops/fmha/block/block_position_encoding.hpp"
@@ -40,7 +39,6 @@ struct SageAttnFwdKernel
     using KDataType    = ck_tile::remove_cvref_t<typename SageAttnPipeline::KDataType>;
     using VDataType    = ck_tile::remove_cvref_t<typename SageAttnPipeline::VDataType>;
     using PDataType    = ck_tile::remove_cvref_t<typename SageAttnPipeline::PDataType>;
-    using BiasDataType = ck_tile::remove_cvref_t<typename SageAttnPipeline::BiasDataType>;
     using ODataType    = ck_tile::remove_cvref_t<typename SageAttnPipeline::ODataType>;
     using SaccDataType = ck_tile::remove_cvref_t<typename SageAttnPipeline::SaccDataType>;
 
@@ -52,7 +50,6 @@ struct SageAttnFwdKernel
     static constexpr bool kPadHeadDimQ = SageAttnPipeline::kPadHeadDimQ;
     static constexpr bool kPadHeadDimV = SageAttnPipeline::kPadHeadDimV;
     // logits_soft_cap is always disabled
-    static constexpr auto BiasEnum        = SageAttnPipeline::BiasEnum;
     static constexpr auto QScaleEnum      = SageAttnPipeline::Problem::QScaleEnum;
     static constexpr bool kSkipMinSeqlenQ = SageAttnPipeline::Problem::kSkipMinSeqlenQ;
 
@@ -123,8 +120,7 @@ struct SageAttnFwdKernel
             pipeline_str + "_" +
             "v" + (std::is_same_v<VLayout, ck_tile::tensor_layout::gemm::RowMajor> ? "r" : "c") + 
             (pn.empty() ? "" : "_" + pn) +
-            (BiasEnum == BlockAttentionBiasEnum::NO_BIAS ? "_nbias" :
-             BiasEnum == BlockAttentionBiasEnum::ALIBI ? "_alibi" : "_bias") +
+            "_nbias" +
             (kHasMask ? "_mask" : "_nmask") +
             (kSkipMinSeqlenQ ? "_skip" : "_nskip") +
             (QScaleEnum == BlockAttentionQuantScaleEnum::NO_SCALE ? "_nqscale" : "_pertensor") +
@@ -236,11 +232,7 @@ struct SageAttnFwdKernel
 
     struct SageAttnFwdBatchModeKargs
         : SageAttnFwdCommonKargs,
-          std::conditional_t<BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS,
-                             SageAttnFwdBatchModeBiasKargs,
-                             std::conditional_t<BiasEnum == BlockAttentionBiasEnum::ALIBI,
-                                                SageAttnFwdAlibiKargs,
-                                                SageAttnFwdEmptyKargs<0>>>,
+          SageAttnFwdEmptyKargs<0>,
           std::conditional_t<kHasMask, SageAttnFwdMaskKargs, SageAttnFwdEmptyKargs<1>>,
           std::conditional_t<
               QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
@@ -263,11 +255,7 @@ struct SageAttnFwdKernel
 
     struct SageAttnFwdGroupModeKargs
         : SageAttnFwdCommonKargs,
-          std::conditional_t<BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS,
-                             SageAttnFwdCommonBiasKargs,
-                             std::conditional_t<BiasEnum == BlockAttentionBiasEnum::ALIBI,
-                                                SageAttnFwdAlibiKargs,
-                                                SageAttnFwdEmptyKargs<0>>>,
+          SageAttnFwdEmptyKargs<0>,
           std::conditional_t<kHasMask, SageAttnFwdMaskKargs, SageAttnFwdEmptyKargs<1>>,
           std::conditional_t<
               QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
@@ -305,7 +293,7 @@ struct SageAttnFwdKernel
     MakeKargsImpl(const void* q_ptr,
                   const void* k_ptr,
                   const void* v_ptr,
-                  const void* bias_ptr,
+                  const void* /*bias_ptr*/,
                   const void* q_descale_ptr,
                   const void* k_descale_ptr,
                   const void* v_descale_ptr,
@@ -320,12 +308,12 @@ struct SageAttnFwdKernel
                   ck_tile::index_t stride_q,
                   ck_tile::index_t stride_k,
                   ck_tile::index_t stride_v,
-                  ck_tile::index_t stride_bias,
+                  ck_tile::index_t /*stride_bias*/,
                   ck_tile::index_t stride_o,
                   ck_tile::index_t nhead_stride_q,
                   ck_tile::index_t nhead_stride_k,
                   ck_tile::index_t nhead_stride_v,
-                  ck_tile::index_t nhead_stride_bias,
+                  ck_tile::index_t /*nhead_stride_bias*/,
                   ck_tile::index_t nhead_stride_o,
                   ck_tile::index_t nhead_stride_q_descale,
                   ck_tile::index_t nhead_stride_k_descale,
@@ -333,7 +321,7 @@ struct SageAttnFwdKernel
                   ck_tile::index_t batch_stride_q,
                   ck_tile::index_t batch_stride_k,
                   ck_tile::index_t batch_stride_v,
-                  ck_tile::index_t batch_stride_bias,
+                  ck_tile::index_t /*batch_stride_bias*/,
                   ck_tile::index_t batch_stride_o,
                   ck_tile::index_t batch_stride_q_descale,
                   ck_tile::index_t batch_stride_k_descale,
@@ -377,18 +365,6 @@ struct SageAttnFwdKernel
                     batch_stride_v,
                     batch_stride_o};
 
-        if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-        {
-            kargs.bias_ptr          = bias_ptr;
-            kargs.stride_bias       = stride_bias;
-            kargs.nhead_stride_bias = nhead_stride_bias;
-            kargs.batch_stride_bias = batch_stride_bias;
-        }
-        else if constexpr(BiasEnum == BlockAttentionBiasEnum::ALIBI)
-        {
-            kargs.alibi_slope_ptr    = bias_ptr;
-            kargs.alibi_slope_stride = stride_bias;
-        }
         if constexpr(kHasMask)
         {
             kargs.window_size_left  = window_size_left;
@@ -432,7 +408,7 @@ struct SageAttnFwdKernel
     MakeKargs(const void* q_ptr,
               const void* k_ptr,
               const void* v_ptr,
-              const void* bias_ptr,
+              const void* /*bias_ptr*/,
               const void* q_descale_ptr,
               const void* k_descale_ptr,
               const void* v_descale_ptr,
@@ -447,17 +423,17 @@ struct SageAttnFwdKernel
               ck_tile::index_t stride_q,
               ck_tile::index_t stride_k,
               ck_tile::index_t stride_v,
-              ck_tile::index_t stride_bias,
+              ck_tile::index_t /*stride_bias*/,
               ck_tile::index_t stride_o,
               ck_tile::index_t nhead_stride_q,
               ck_tile::index_t nhead_stride_k,
               ck_tile::index_t nhead_stride_v,
-              ck_tile::index_t nhead_stride_bias,
+              ck_tile::index_t /*nhead_stride_bias*/,
               ck_tile::index_t nhead_stride_o,
               ck_tile::index_t batch_stride_q,
               ck_tile::index_t batch_stride_k,
               ck_tile::index_t batch_stride_v,
-              ck_tile::index_t batch_stride_bias,
+              ck_tile::index_t /*batch_stride_bias*/,
               ck_tile::index_t batch_stride_o,
               ck_tile::index_t window_size_left,
               ck_tile::index_t window_size_right,
@@ -468,7 +444,7 @@ struct SageAttnFwdKernel
         return MakeKargsImpl(q_ptr,
                              k_ptr,
                              v_ptr,
-                             bias_ptr,
+                             nullptr,
                              q_descale_ptr,
                              k_descale_ptr,
                              v_descale_ptr,
@@ -483,17 +459,17 @@ struct SageAttnFwdKernel
                              stride_q,
                              stride_k,
                              stride_v,
-                             stride_bias,
+                             nullptr,
                              stride_o,
                              nhead_stride_q,
                              nhead_stride_k,
                              nhead_stride_v,
-                             nhead_stride_bias,
+                             nullptr,
                              nhead_stride_o,
                              batch_stride_q,
                              batch_stride_k,
                              batch_stride_v,
-                             batch_stride_bias,
+                             nullptr,
                              batch_stride_o,
                              window_size_left,
                              window_size_right,
@@ -508,7 +484,7 @@ struct SageAttnFwdKernel
     MakeKargs(const void* q_ptr,
               const void* k_ptr,
               const void* v_ptr,
-              const void* bias_ptr,
+              const void* /*bias_ptr*/,
               const void* q_descale_ptr,
               const void* k_descale_ptr,
               const void* v_descale_ptr,
@@ -555,7 +531,7 @@ struct SageAttnFwdKernel
             q_ptr,
             k_ptr,
             v_ptr,
-            bias_ptr,
+            nullptr,
             q_descale_ptr,
             k_descale_ptr,
             v_descale_ptr,
@@ -604,7 +580,7 @@ struct SageAttnFwdKernel
     MakeKargsImpl(const void* q_ptr,
                   const void* k_ptr,
                   const void* v_ptr,
-                  const void* bias_ptr,
+                  const void* /*bias_ptr*/,
                   const void* q_descale_ptr,
                   const void* k_descale_ptr,
                   const void* v_descale_ptr,
@@ -621,12 +597,12 @@ struct SageAttnFwdKernel
                   ck_tile::index_t stride_q,
                   ck_tile::index_t stride_k,
                   ck_tile::index_t stride_v,
-                  ck_tile::index_t stride_bias,
+                  ck_tile::index_t /*stride_bias*/,
                   ck_tile::index_t stride_o,
                   ck_tile::index_t nhead_stride_q,
                   ck_tile::index_t nhead_stride_k,
                   ck_tile::index_t nhead_stride_v,
-                  ck_tile::index_t nhead_stride_bias,
+                  ck_tile::index_t /*nhead_stride_bias*/,
                   ck_tile::index_t nhead_stride_o,
                   ck_tile::index_t nhead_stride_q_descale,
                   ck_tile::index_t nhead_stride_k_descale,
@@ -674,17 +650,6 @@ struct SageAttnFwdKernel
                     reinterpret_cast<const int32_t*>(seqlen_q_ptr),
                     reinterpret_cast<const int32_t*>(seqlen_k_ptr)};
 
-        if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-        {
-            kargs.bias_ptr          = bias_ptr;
-            kargs.stride_bias       = stride_bias;
-            kargs.nhead_stride_bias = nhead_stride_bias;
-        }
-        else if constexpr(BiasEnum == BlockAttentionBiasEnum::ALIBI)
-        {
-            kargs.alibi_slope_ptr    = bias_ptr;
-            kargs.alibi_slope_stride = stride_bias;
-        }
         if constexpr(kHasMask)
         {
             kargs.window_size_left  = window_size_left;
@@ -733,7 +698,7 @@ struct SageAttnFwdKernel
     MakeKargs(const void* q_ptr,
               const void* k_ptr,
               const void* v_ptr,
-              const void* bias_ptr,
+              const void* /*bias_ptr*/,
               const void* q_descale_ptr,
               const void* k_descale_ptr,
               const void* v_descale_ptr,
@@ -776,7 +741,7 @@ struct SageAttnFwdKernel
             q_ptr,
             k_ptr,
             v_ptr,
-            bias_ptr,
+            nullptr,
             q_descale_ptr,
             k_descale_ptr,
             v_descale_ptr,
@@ -822,7 +787,7 @@ struct SageAttnFwdKernel
     MakeKargs(const void* q_ptr,
               const void* k_ptr,
               const void* v_ptr,
-              const void* bias_ptr,
+              const void* /*bias_ptr*/,
               const void* q_descale_ptr,
               const void* k_descale_ptr,
               const void* v_descale_ptr,
@@ -865,7 +830,7 @@ struct SageAttnFwdKernel
             q_ptr,
             k_ptr,
             v_ptr,
-            bias_ptr,
+            nullptr,
             q_descale_ptr,
             k_descale_ptr,
             v_descale_ptr,
@@ -1032,7 +997,6 @@ struct SageAttnFwdKernel
             long_index_t batch_offset_q         = 0;
             long_index_t batch_offset_k         = 0;
             long_index_t batch_offset_v         = 0;
-            long_index_t batch_offset_bias      = 0;
             long_index_t batch_offset_o         = 0;
             long_index_t batch_offset_q_descale = 0;
             long_index_t batch_offset_k_descale = 0;
@@ -1054,10 +1018,6 @@ struct SageAttnFwdKernel
                 else
                 {
                     batch_offset_v = key_start;
-                }
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-                {
-                    batch_offset_bias = query_start * kargs.stride_bias;
                 }
                 if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
                              QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
@@ -1121,11 +1081,6 @@ struct SageAttnFwdKernel
                 batch_offset_q = static_cast<long_index_t>(i_batch) * kargs.batch_stride_q;
                 batch_offset_k = static_cast<long_index_t>(i_batch) * kargs.batch_stride_k;
                 batch_offset_v = static_cast<long_index_t>(i_batch) * kargs.batch_stride_v;
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-                {
-                    batch_offset_bias =
-                        static_cast<long_index_t>(i_batch) * kargs.batch_stride_bias;
-                }
                 if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
                              QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
                 {
@@ -1267,37 +1222,6 @@ struct SageAttnFwdKernel
                 {i_n1, 0});
             /// FIXME: Before C++20, capturing structured binding variables are not supported.
             /// Remove following copy capture of the 'i_nhead' if in C++20
-            const auto bias_dram_window = [&, i_nhead_ = i_nhead]() {
-                constexpr auto bias_dram_window_lengths =
-                    make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kN0>{});
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-                {
-                    const BiasDataType* bias_ptr =
-                        reinterpret_cast<const BiasDataType*>(kargs.bias_ptr) +
-                        static_cast<long_index_t>(i_nhead_) * kargs.nhead_stride_bias +
-                        batch_offset_bias;
-
-                    const auto bias_dram = [&]() {
-                        const auto bias_dram_naive =
-                            make_naive_tensor_view<address_space_enum::global>(
-                                bias_ptr,
-                                make_tuple(kargs.seqlen_q, kargs.seqlen_k),
-                                make_tuple(kargs.stride_bias, 1),
-                                number<SageAttnPipeline::kAlignmentBias>{},
-                                number<1>{});
-
-                        return pad_tensor_view(bias_dram_naive,
-                                               bias_dram_window_lengths,
-                                               sequence<kPadSeqLenQ, kPadSeqLenK>{});
-                    }();
-
-                    return make_tile_window(bias_dram, bias_dram_window_lengths, {i_m0, 0});
-                }
-                else
-                {
-                    return make_null_tile_window(bias_dram_window_lengths);
-                }
-            }();
 
             FmhaMask mask = [&]() {
                 if constexpr(kHasMask)
@@ -1313,37 +1237,7 @@ struct SageAttnFwdKernel
             }();
 
             // WA i_batch capture structure binding before c++20
-            auto position_encoding = [&, i_batch_ = i_batch, i_nhead_ = i_nhead]() {
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ALIBI)
-                {
-                    // data loading, shared by entire wg
-                    // TODO: how to use s_read?
-                    SaccDataType slope =
-                        *(reinterpret_cast<const SaccDataType*>(kargs.alibi_slope_ptr) +
-                          i_batch_ * kargs.alibi_slope_stride + i_nhead_);
-#if CK_TILE_FMHA_FWD_FAST_EXP2
-                    slope *= ck_tile::log2e_v<>;
-#endif
-                    if constexpr(kHasMask)
-                    {
-                        return make_alibi_from_lr_mask<SaccDataType, true>(slope,
-                                                                           kargs.window_size_left,
-                                                                           kargs.window_size_right,
-                                                                           kargs.seqlen_q,
-                                                                           kargs.seqlen_k,
-                                                                           kargs.mask_type);
-                    }
-                    else
-                    {
-                        return Alibi<SaccDataType, true>{
-                            slope, kargs.seqlen_q, kargs.seqlen_k, AlibiMode::FROM_BOTTOM_RIGHT};
-                    }
-                }
-                else
-                {
-                    return EmptyPositionEncoding<SaccDataType>{};
-                }
-            }();
+            auto position_encoding = EmptyPositionEncoding<SaccDataType>{};
 
             AttentionVariant variant;
             const auto variant_params = [&] {
@@ -1390,8 +1284,6 @@ struct SageAttnFwdKernel
                                               identity{}, // k_element_func
                                               v_dram_window,
                                               identity{}, // v_element_func
-                                              bias_dram_window,
-                                              identity{}, // bias_element_func
                                               identity{}, // s_acc_element_func
                                               scales<remove_cvref_t<decltype(scale_p)>>{
                                                   scale_p},       // p_compute_element_func
@@ -1431,9 +1323,7 @@ struct SageAttnFwdKernel
                         k_dram_window,
                         identity{}, // k_element_func
                         v_dram_window,
-                        identity{}, // v_element_func
-                        bias_dram_window,
-                        identity{},               // bias_element_func
+                        identity{},               // v_element_func
                         scales<float>(q_descale), // s_acc_element_func
                         identity{}, // p_compute_element_func - No scaling (done in exp2)
                         identity{}, // o_acc_element_func - No dequant (canceled by rowsum)
@@ -1483,9 +1373,7 @@ struct SageAttnFwdKernel
                         k_dram_window,
                         identity{}, // k_element_func
                         v_dram_window,
-                        identity{}, // v_element_func
-                        bias_dram_window,
-                        identity{},               // bias_element_func
+                        identity{},               // v_element_func
                         scales<float>(q_descale), // s_acc_element_func - per-warp q_descale
                         identity{}, // p_compute_element_func - No scaling (done in exp2)
                         identity{}, // o_acc_element_func - No dequant (canceled by rowsum)
@@ -1507,7 +1395,6 @@ struct SageAttnFwdKernel
                     return SageAttnPipeline{}(q_dram_window,
                                               k_dram_window,
                                               v_dram_window,
-                                              bias_dram_window,
                                               mask,
                                               position_encoding,
                                               variant_params.sm_scale,
@@ -1558,11 +1445,10 @@ struct SageAttnFwdKernel
             const index_t i_m0 = i_tile_m * SageAttnPipeline::kM0;
             const index_t i_n1 = i_tile_n * SageAttnPipeline::kN1;
 
-            long_index_t batch_offset_q    = 0;
-            long_index_t batch_offset_k    = 0; // unused for paged-kvcache
-            long_index_t batch_offset_v    = 0; // unused for paged-kvcache
-            long_index_t batch_offset_bias = 0;
-            long_index_t batch_offset_o    = 0;
+            long_index_t batch_offset_q = 0;
+            long_index_t batch_offset_k = 0; // unused for paged-kvcache
+            long_index_t batch_offset_v = 0; // unused for paged-kvcache
+            long_index_t batch_offset_o = 0;
             // index_t kv_l2p_offset =
             //     0; // logical-to-physical offset of seqlen_k coordinate. only used for
             //     paged-kvcache
@@ -1584,10 +1470,6 @@ struct SageAttnFwdKernel
                 {
                     // col-major V: offset along seqlen dimension is scalar index
                     batch_offset_v = key_start;
-                }
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-                {
-                    batch_offset_bias = query_start * kargs.stride_bias;
                 }
 
                 batch_offset_o = query_start * kargs.stride_o;
@@ -1636,12 +1518,6 @@ struct SageAttnFwdKernel
                 batch_offset_k = static_cast<long_index_t>(i_batch) * kargs.batch_stride_k;
                 batch_offset_v = static_cast<long_index_t>(i_batch) * kargs.batch_stride_v;
                 batch_offset_o = static_cast<long_index_t>(i_batch) * kargs.batch_stride_o;
-
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-                {
-                    batch_offset_bias =
-                        static_cast<long_index_t>(i_batch) * kargs.batch_stride_bias;
-                }
 
                 // If cumulative seqlen pointers are provided, override per-batch effective lengths
                 if(kargs.cu_seqlen_q_ptr != nullptr)
@@ -2071,37 +1947,6 @@ struct SageAttnFwdKernel
 
             /// FIXME: Before C++20, capturing structured binding variables are not supported.
             /// Remove following copy capture of the 'i_nhead' if in C++20
-            const auto bias_dram_window = [&, i_nhead_ = i_nhead]() {
-                constexpr auto bias_dram_window_lengths =
-                    make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kN0>{});
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-                {
-                    const BiasDataType* bias_ptr =
-                        reinterpret_cast<const BiasDataType*>(kargs.bias_ptr) +
-                        static_cast<long_index_t>(i_nhead_) * kargs.nhead_stride_bias +
-                        batch_offset_bias;
-
-                    const auto bias_dram = [&]() {
-                        const auto bias_dram_naive =
-                            make_naive_tensor_view<address_space_enum::global>(
-                                bias_ptr,
-                                make_tuple(kargs.seqlen_q, kargs.seqlen_k),
-                                make_tuple(kargs.stride_bias, 1),
-                                number<SageAttnPipeline::kAlignmentBias>{},
-                                number<1>{});
-
-                        return pad_tensor_view(bias_dram_naive,
-                                               bias_dram_window_lengths,
-                                               sequence<false, kPadSeqLenK>{});
-                    }();
-
-                    return make_tile_window(bias_dram, bias_dram_window_lengths, {i_m0, 0});
-                }
-                else
-                {
-                    return make_null_tile_window(bias_dram_window_lengths);
-                }
-            }();
 
             FmhaMask mask = [&]() {
                 if constexpr(kHasMask)
@@ -2117,38 +1962,7 @@ struct SageAttnFwdKernel
             }();
 
             // WA i_batch capture structure binding before c++20
-            auto position_encoding = [&, i_batch_ = i_batch, i_nhead_ = i_nhead]() {
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ALIBI)
-                {
-                    // data loading, shared by entire wg
-                    // TODO: how to use s_read?
-                    SaccDataType slope =
-                        *(reinterpret_cast<const SaccDataType*>(kargs.alibi_slope_ptr) +
-                          i_batch_ * kargs.alibi_slope_stride + i_nhead_);
-#if CK_TILE_FMHA_FWD_FAST_EXP2
-                    slope *= ck_tile::log2e_v<>;
-#endif
-                    if constexpr(kHasMask)
-                    {
-                        return make_alibi_from_lr_mask<SaccDataType, true, 32>(
-                            slope,
-                            kargs.window_size_left,
-                            kargs.window_size_right,
-                            kargs.seqlen_q,
-                            kargs.seqlen_k,
-                            kargs.mask_type);
-                    }
-                    else
-                    {
-                        return Alibi<SaccDataType, true, 32>{
-                            slope, kargs.seqlen_q, kargs.seqlen_k, AlibiMode::FROM_BOTTOM_RIGHT};
-                    }
-                }
-                else
-                {
-                    return EmptyPositionEncoding<SaccDataType>{};
-                }
-            }();
+            auto position_encoding = EmptyPositionEncoding<SaccDataType>{};
 
             auto o_acc_tile = [&]() {
                 if constexpr(PrefillCase)
@@ -2169,7 +1983,6 @@ struct SageAttnFwdKernel
                     return SageAttnPipeline{}(q_dram_window,
                                               k_dram_window,
                                               v_dram_window,
-                                              bias_dram_window,
                                               mask,
                                               position_encoding,
                                               kargs.scale_s,
@@ -2184,7 +1997,6 @@ struct SageAttnFwdKernel
                     return SageAttnPipeline{}(q_dram_window,
                                               k_dram_window,
                                               v_dram_window,
-                                              bias_dram_window,
                                               mask,
                                               position_encoding,
                                               kargs.scale_s,

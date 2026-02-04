@@ -53,11 +53,6 @@ auto create_args(int argc, char* argv[])
                 "permute input\n"
                 "if true, will be b*h*s*d, else b*s*h*d")
         .insert("operm", "1", "permute output")
-        .insert("bias",
-                "n",
-                "n or 0, no bias\n"
-                "e(lementwise) or 1, elementwise bias with 1*1*s*s. e:1, 1*h*s*s. e:2, b*h*s*s\n"
-                "a(libi) or 2, alibi with 1*h. a:1, b*h")
         .insert("prec", "fp8bf16", "data type. fp8bf16/i8fp8bf16")
         .insert("mask",
                 "0",
@@ -121,7 +116,6 @@ auto run(const ck_tile::ArgParser& arg_parser)
     bool o_perm                = arg_parser.get_bool("operm");
     float scale_s              = arg_parser.get_float("scale_s");
     bool is_v_rowmajor         = arg_parser.get_str("vlayout") == "r";
-    std::string bias_str       = arg_parser.get_str("bias");
     std::string qscale_str     = arg_parser.get_str("qscale");
     std::string mask_str       = arg_parser.get_str("mask");
     std::string init_method    = arg_parser.get_str("init");
@@ -154,7 +148,6 @@ auto run(const ck_tile::ArgParser& arg_parser)
                                             o_perm,
                                             scale_s,
                                             is_v_rowmajor,
-                                            bias_str,
                                             mask_str,
                                             qscale_str,
                                             init_method,
