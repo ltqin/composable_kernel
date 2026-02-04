@@ -29,7 +29,6 @@ from codegen.utils import check_duplicates_and_paddings, if_, indent, update_fil
 
 
 DTYPE_BITS = {
-    "fp32": 32,
     "fp16": 16,
     "bf16": 16,
     "fp8": 8,
@@ -774,7 +773,6 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
         "gfx9", preprocessor_check="defined(__gfx9__) && !defined(__gfx950__)"
     )
 
-    _DT_FP32 = ("fp32",)
     _DT_FP16_BF16 = ("fp16", "bf16")
     _DT_FP8 = ("fp8",)
     _DT_FP8BF16 = ("fp8bf16",)
@@ -782,24 +780,13 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
 
     @classmethod
     def supported_dtypes(cls) -> Tuple[str]:
-        return (
-            cls._DT_FP32
-            + cls._DT_FP16_BF16
-            + cls._DT_FP8
-            + cls._DT_FP8BF16
-            + cls._DT_I8FP8BF16
-        )
+        return cls._DT_FP16_BF16 + cls._DT_FP8 + cls._DT_FP8BF16 + cls._DT_I8FP8BF16
 
     # TODO: design a more practical way to do it
     # this is current supported tile size per hdim
     @classmethod
     def get_hdim_tile_size_dict(cls, dtype: str) -> Optional[dict]:
-        if dtype in cls._DT_FP32:
-            return {
-                #                                 bm0, bn0, bk0, bn1, bk1,
-                (128, 128) : [SageAttnFwdTileSize(128,  64,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
-            }  # fmt: skip
-        elif dtype in cls._DT_FP16_BF16:
+        if dtype in cls._DT_FP16_BF16:
             return {
                 (128, 128) : [SageAttnFwdTileSize(128, 128,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 16,  32, 32, 16,  -1)],
             }  # fmt: skip
@@ -826,17 +813,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
         # TODO: currently for qr pipeline, let "t" padding to appear later!!
         # TODO: how to design this more generic?
         pipelines = []
-        if dtype in cls._DT_FP32:
-            qscale = "no"
-            skip = "f"  # skip: only false
-            for mask, vlayout in itertools.product(
-                get_mask_map(mask_impl).keys(),
-                ["row", "col"],
-            ):
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", qscale, mask, skip, "f"))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "t", "f", "f", qscale, mask, skip, "f"))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
-        elif dtype in cls._DT_FP16_BF16:
+        if dtype in cls._DT_FP16_BF16:
             qscale = "no"
             skip = "f"  # skip: only false
             for mask, vlayout in itertools.product(
@@ -851,8 +828,6 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
                 else:
                     pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "f", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
                     pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "t", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
-                    if receipt == 1:
-                        pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip, "f"))  # fmt: skip # TODO: cover arbitraty hdim# fmt: skip
         elif dtype in cls._DT_FP8BF16 or dtype in cls._DT_I8FP8BF16:
             # no need lse kernels
             skip = "f"  # skip: only false
@@ -976,104 +951,15 @@ class Product:
 
 
 def get_product(receipt: int) -> Product:
-    # Flash attention integration
-    if receipt in (2, 3):
+    # Build all supported dtypes and configurations
+    def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
+        # fp16/bf16 only support qscale="no"
+        if problem_ctx.dtype in ["fp16", "bf16"]:
+            if kernel_ctx.pipeline.F_qscale != "no":
+                return False
+        return True
 
-        def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            cond = problem_ctx.dtype in ["fp16", "bf16"]
-            cond &= kernel_ctx.pipeline.F_vlayout == "row"
-            cond &= kernel_ctx.pipeline.F_qscale == "no"
-            cond &= kernel_ctx.pipeline.F_skip == "f"
-            return cond
-
-        return Product(name="Flash attention integration", rule=fit)
-    # PyTorch integration
-    elif receipt == 4:
-
-        def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            cond = problem_ctx.dtype in ["fp16", "bf16"]
-            cond &= kernel_ctx.pipeline.F_vlayout == "row"
-            cond &= kernel_ctx.pipeline.F_qscale == "no"
-            cond &= problem_ctx.mode == "batch"
-            cond &= kernel_ctx.pipeline.F_skip == "f"
-            # logits is always false, no need to check
-            return cond
-
-        return Product(name="PyTorch integration", rule=fit)
-    # Aiter(mha_fwd) integration
-    elif receipt == 100:
-
-        def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            cond = problem_ctx.dtype in ["fp16", "bf16", "fp8bf16"]
-            cond &= problem_ctx.mode == "batch"
-            cond &= kernel_ctx.pipeline.F_vlayout == "row"
-            if problem_ctx.dtype == "fp8bf16":
-                cond &= problem_ctx.hdim == 128 or problem_ctx.hdim == 192
-            return cond
-
-        return Product(name="Aiter(mha_fwd) integration", rule=fit)
-    # Aiter(mha_varlen_fwd) integration
-    elif receipt == 200:
-
-        def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            cond = problem_ctx.dtype in ["fp16", "bf16", "fp8bf16"]
-            cond &= problem_ctx.mode == "group"
-            cond &= kernel_ctx.pipeline.F_vlayout == "row"
-            if problem_ctx.dtype == "fp8bf16":
-                cond &= problem_ctx.hdim == 128 or problem_ctx.hdim == 192
-            return cond
-
-        return Product(name="Aiter(mha_varlen_fwd) integration", rule=fit)
-    # aiter::mha_fwd C++ api integration
-    elif receipt == 600:
-
-        def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            cond = problem_ctx.dtype in ["fp16", "bf16", "fp8bf16"]
-            cond &= kernel_ctx.pipeline.F_vlayout == "row"
-            if problem_ctx.dtype == "fp8bf16":
-                cond &= problem_ctx.hdim == 128 or problem_ctx.hdim == 192
-            return cond
-
-        return Product(name="aiter::mha_fwd C++ api integration", rule=fit)
-    elif receipt == 888:
-
-        def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            cond = problem_ctx.dtype in ["fp8bf16", "i8fp8bf16"]
-            cond &= kernel_ctx.pipeline.F_vlayout == "row"
-            cond &= problem_ctx.hdim == 128 or problem_ctx.hdim == 192
-            return cond
-
-        return Product(name="receipt = 888", rule=fit)
-    # fp32 only, all variations
-    elif receipt == 800:
-
-        def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            cond = problem_ctx.dtype == "fp32"
-            cond &= kernel_ctx.pipeline.F_skip == "f"
-            # logits is always false, no need to check
-            return cond
-
-        return Product(name="fp32 only, all variations", rule=fit)
-    # fp32 only, minimal set of parameters
-    elif receipt == 801:
-
-        def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            cond = problem_ctx.dtype == "fp32"
-            cond &= problem_ctx.hdim in [48, 128]
-            cond &= problem_ctx.mode == "batch"
-            cond &= kernel_ctx.pipeline.F_skip == "f"
-            # logits is always false, no need to check
-            cond &= kernel_ctx.pipeline.F_mask == "s_no"
-            return cond
-
-        return Product(name="fp32 only, minimal set of parameters", rule=fit)
-    # Don't build fp32 by default
-    else:
-
-        def fit(problem_ctx: ProblemContext, kernel_ctx: KernelContext) -> bool:
-            return problem_ctx.dtype != "fp32"
-
-        return Product(name="Default", rule=fit)
+    return Product(name="Default", rule=fit)
 
 
 def get_fwd_blobs(

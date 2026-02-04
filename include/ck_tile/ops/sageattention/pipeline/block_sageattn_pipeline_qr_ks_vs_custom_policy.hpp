@@ -459,29 +459,6 @@ struct BlockSageAttnPipelineQRKSVSCustomPolicy : BlockSageAttnPipelineQRCustomPo
     }
 
     template <typename Problem>
-    CK_TILE_HOST_DEVICE static constexpr auto GetAlignmentBias()
-    {
-        using BlockGemm = remove_cvref_t<decltype(QXPolicy::template GetQKBlockGemm<Problem>())>;
-        constexpr auto config = BlockGemm::Policy::template GetWarpGemmMWarpNWarp<Problem>();
-        using WG              = remove_cvref_t<decltype(config.template at<0>())>;
-
-        return WG::WarpGemmAttribute::Impl::kCM1PerLane;
-    }
-
-    template <typename Problem>
-    CK_TILE_HOST_DEVICE static constexpr auto GetAlignmentRandVal()
-    {
-        using BlockGemm = remove_cvref_t<decltype(QXPolicy::template GetQKBlockGemm<Problem>())>;
-        constexpr auto config = BlockGemm::Policy::template GetWarpGemmMWarpNWarp<Problem>();
-        using WG              = remove_cvref_t<decltype(config.template at<0>())>;
-        using CWarpDstr       = typename WG::CWarpDstr;
-
-        constexpr auto c_warp_y_lengths = CWarpDstr{}.get_ys_to_d_descriptor().get_lengths();
-        constexpr index_t MaxVectorSize = 16 / sizeof(typename Problem::RandValOutputDataType);
-        return min(MaxVectorSize, c_warp_y_lengths.get(number<CWarpDstr::NDimY - 1>{}));
-    }
-
-    template <typename Problem>
     CK_TILE_HOST_DEVICE static constexpr auto GetAlignmentO()
     {
         using BlockGemm       = remove_cvref_t<decltype(GetKVBlockGemm<Problem>())>;
@@ -729,45 +706,7 @@ struct BlockSageAttnPipelineQRKSVSCustomPolicy : BlockSageAttnPipelineQRCustomPo
     template <typename Problem>
     CK_TILE_HOST_DEVICE static constexpr ck_tile::index_t GetSmemSize()
     {
-        if constexpr(AsyncCopy)
-        {
-            return GetSmemSizeKV<Problem>() + GetSmemSizeDropout<Problem>(0);
-        }
-        else
-        {
-            return ck_tile::max(GetSmemSizeKV<Problem>(), GetSmemSizeDropout<Problem>(0));
-        }
-    }
-
-    // this method is only available when Problem::kHasDropout is present
-    template <typename Problem>
-    CK_TILE_HOST_DEVICE static constexpr std::
-        enable_if_t<std::is_convertible_v<decltype(Problem::kHasDropout), bool>, ck_tile::index_t>
-        GetSmemSizeDropout(int)
-    {
-        if constexpr(Problem::kHasDropout)
-        {
-            constexpr auto gemm_0 = QXPolicy::template GetQKBlockGemm<Problem>();
-            constexpr auto config =
-                decltype(gemm_0)::Policy::template GetWarpGemmMWarpNWarp<Problem>();
-            using WG                    = remove_cvref_t<decltype(config.template at<0>())>;
-            constexpr index_t MWarp     = config.template at<1>();
-            constexpr index_t kMPerStep = MWarp * WG::kM;
-            constexpr index_t kNPerStep = WG::kN;
-
-            return (kMPerStep + 1) * kNPerStep * sizeof(uint8_t);
-        }
-        else
-        {
-            return 0;
-        }
-    }
-
-    // fallback version if Problem::kHasDropout is not exist
-    template <typename Problem>
-    CK_TILE_HOST_DEVICE static constexpr ck_tile::index_t GetSmemSizeDropout(...)
-    {
-        return 0;
+        return GetSmemSizeKV<Problem>();
     }
 
     template <typename Problem>
@@ -941,12 +880,6 @@ struct BlockSageAttnPipelineQRKSVSCustomPolicy : BlockSageAttnPipelineQRCustomPo
                 return dstr_m;
             }
         }
-    }
-
-    template <typename BlockGemm>
-    CK_TILE_HOST_DEVICE static constexpr auto MakeBiasDramTileDistribution()
-    {
-        return BlockGemm::MakeCBlockTile().get_tile_distribution();
     }
 
     template <typename Problem>
