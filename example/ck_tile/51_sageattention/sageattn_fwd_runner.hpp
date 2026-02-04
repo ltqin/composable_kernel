@@ -97,7 +97,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                             bool o_perm,
                             float scale_s,
                             bool is_v_rowmajor,
-                            std::string bias_str,
                             std::string mask_str,
                             std::string qscale_str,
                             std::string init_method,
@@ -189,8 +188,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     if(scale_s == .0f)
         scale_s = 1.0 / ck_tile::sqrt(static_cast<float>(hdim_q)); // TODO: q ? v ?
 
-    bias_info bias = bias_info::decode(bias_str);
-
     mask_info mask =
         mask_info::decode(mask_str, seqlen_qs[0], seqlen_ks[0]); // TODO: we don't need x/y anymore
 
@@ -244,7 +241,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     using QDataType           = typename TypeConfig::QDataType;
     using KDataType           = typename TypeConfig::KDataType;
     using VDataType           = typename TypeConfig::VDataType;
-    using BiasDataType        = typename TypeConfig::BiasDataType;
     using SaccDataType        = typename TypeConfig::SaccDataType;
     using SMPLComputeDataType = typename TypeConfig::SMPLComputeDataType;
     using PDataType           = typename TypeConfig::PDataType;
@@ -342,16 +338,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     ck_tile::HostTensor<VDataType> v_host(
         is_v_rowmajor ? get_lengths(i_perm, shape_batch, nhead_k, shape_seqlen_k, hdim_v)
                       : get_lengths(i_perm, shape_batch, nhead_k, hdim_v, shape_seqlen_k));
-    ck_tile::HostTensor<BiasDataType> bias_host(
-        bias.type == bias_enum::elementwise_bias
-            ? get_lengths(i_perm, 1, 1, shape_seqlen_q, max_seqlen_k)
-            : std::array<ck_tile::index_t, 4>{1, 1, 1, 1} /* dummy shape for simplifying code */);
-
-    ck_tile::HostTensor<SaccDataType> alibi_slope_host(
-        bias.type == bias_enum::alibi
-            ? (bias.rank_info == 0 ? std::array<ck_tile::index_t, 2>{1, nhead}
-                                   : std::array<ck_tile::index_t, 2>{batch, nhead})
-            : std::array<ck_tile::index_t, 2>{1, 1});
 
     // TODO - change the tensor length for different quant scale
     ck_tile::HostTensor<float> q_descale_host(
@@ -378,8 +364,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         ck_tile::FillUniformDistributionIntegerValue<QDataType>{-3.f, 3.f, next_seed()}(q_host);
         ck_tile::FillUniformDistributionIntegerValue<KDataType>{-3.f, 3.f, next_seed()}(k_host);
         ck_tile::FillUniformDistributionIntegerValue<VDataType>{-3.f, 3.f, next_seed()}(v_host);
-        ck_tile::FillUniformDistributionIntegerValue<BiasDataType>{-3.f, 3.f, next_seed()}(
-            bias_host);
     }
 
     else if(init_method == "ni")
@@ -387,60 +371,34 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         ck_tile::FillNormalDistributionIntegerValue<QDataType>{-3.f, 3.f, next_seed()}(q_host);
         ck_tile::FillNormalDistributionIntegerValue<KDataType>{-3.f, 3.f, next_seed()}(k_host);
         ck_tile::FillNormalDistributionIntegerValue<VDataType>{-3.f, 3.f, next_seed()}(v_host);
-        ck_tile::FillNormalDistributionIntegerValue<BiasDataType>{-3.f, 3.f, next_seed()}(
-            bias_host);
     }
     else if(init_method == "uf" || init_method == "1")
     {
         ck_tile::FillUniformDistribution<QDataType>{0.f, 1.f, next_seed()}(q_host);
         ck_tile::FillUniformDistribution<KDataType>{0.f, 1.f, next_seed()}(k_host);
         ck_tile::FillUniformDistribution<VDataType>{0.f, 1.f, next_seed()}(v_host);
-        ck_tile::FillUniformDistribution<BiasDataType>{0.f, 1.f, next_seed()}(bias_host);
     }
     else if(init_method == "nf")
     {
         ck_tile::FillNormalDistribution<QDataType>{0.f, 3.f, next_seed()}(q_host);
         ck_tile::FillNormalDistribution<KDataType>{0.f, 3.f, next_seed()}(k_host);
         ck_tile::FillNormalDistribution<VDataType>{0.f, 3.f, next_seed()}(v_host);
-        ck_tile::FillNormalDistribution<BiasDataType>{0.f, 3.f, next_seed()}(bias_host);
     }
     else if(init_method == "tf" || init_method == "2")
     {
         ck_tile::FillTrigValue<QDataType>{}(q_host);
         ck_tile::FillTrigValue<KDataType>{}(k_host);
         ck_tile::FillTrigValue<VDataType>{}(v_host);
-        ck_tile::FillTrigValue<BiasDataType>{}(bias_host);
     }
     else if(init_method == "3")
     {
-        float q_dtype_max    = ck_tile::type_convert<float>(ck_tile::numeric<QDataType>::max());
-        float k_dtype_max    = ck_tile::type_convert<float>(ck_tile::numeric<KDataType>::max());
-        float v_dtype_max    = ck_tile::type_convert<float>(ck_tile::numeric<VDataType>::max());
-        float bias_dtype_max = ck_tile::type_convert<float>(ck_tile::numeric<BiasDataType>::max());
+        float q_dtype_max = ck_tile::type_convert<float>(ck_tile::numeric<QDataType>::max());
+        float k_dtype_max = ck_tile::type_convert<float>(ck_tile::numeric<KDataType>::max());
+        float v_dtype_max = ck_tile::type_convert<float>(ck_tile::numeric<VDataType>::max());
 
         ck_tile::FillUniformDistribution<QDataType>{-q_dtype_max, q_dtype_max, next_seed()}(q_host);
         ck_tile::FillUniformDistribution<KDataType>{-k_dtype_max, k_dtype_max, next_seed()}(k_host);
         ck_tile::FillUniformDistribution<VDataType>{-v_dtype_max, v_dtype_max, next_seed()}(v_host);
-        ck_tile::FillUniformDistribution<BiasDataType>{
-            -bias_dtype_max, bias_dtype_max, next_seed()}(bias_host);
-    }
-    if(bias.type == bias_enum::alibi)
-    {
-        auto slopes = ck_tile::get_alibi_slopes<SaccDataType>(nhead);
-        assert(slopes.size() == static_cast<std::size_t>(nhead));
-        if(bias.rank_info == 0)
-        {
-            // alibi in 1*h
-            std::copy(slopes.begin(), slopes.end(), alibi_slope_host.begin());
-        }
-        else
-        {
-            // alibi in b*h
-            for(auto i_b = 0; i_b < batch; i_b++)
-            {
-                std::copy(slopes.begin(), slopes.end(), alibi_slope_host.begin() + i_b * nhead);
-            }
-        }
     }
     if(qscale.type == quant_scale_enum::pertensor)
     {
@@ -478,7 +436,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     ck_tile::DeviceMem q_buf(q_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem k_buf(k_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem v_buf(v_host.get_element_space_size_in_bytes());
-    ck_tile::DeviceMem bias_buf(bias_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem q_descale_buf(q_descale_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem k_descale_buf(k_descale_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem v_descale_buf(v_descale_host.get_element_space_size_in_bytes());
@@ -501,7 +458,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                                                        : cuq_cum.size() * sizeof(ck_tile::index_t));
     ck_tile::DeviceMem cu_seqlen_kv_buf(
         cukv_cum.empty() ? 0 : cukv_cum.size() * sizeof(ck_tile::index_t));
-    ck_tile::DeviceMem alibi_slope_buf(alibi_slope_host.get_element_space_size_in_bytes());
     ck_tile::DeviceMem block_scale_seqstart_q_buf(
         (mode == mode_enum::group &&
          (qscale.type == quant_scale_enum::blockscale || qscale.type == quant_scale_enum::perwarp))
@@ -516,7 +472,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     q_buf.ToDevice(q_host.data());
     k_buf.ToDevice(k_host.data());
     v_buf.ToDevice(v_host.data());
-    bias_buf.ToDevice(bias_host.data());
     q_descale_buf.ToDevice(q_descale_host.data());
     k_descale_buf.ToDevice(k_descale_host.data());
     v_descale_buf.ToDevice(v_descale_host.data());
@@ -531,7 +486,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     cu_seqlen_kv_buf.ToDevice(cukv_cum.empty() ? nullptr : cukv_cum.data());
     seqlen_q_buf.ToDevice(has_group_q_padding ? seqlen_qs.data() : nullptr);
     seqlen_k_buf.ToDevice(has_group_k_padding ? seqlen_ks.data() : nullptr);
-    alibi_slope_buf.ToDevice(alibi_slope_host.data());
     block_scale_seqstart_q_buf.ToDevice(
         (mode == mode_enum::group &&
          (qscale.type == quant_scale_enum::blockscale || qscale.type == quant_scale_enum::perwarp))
@@ -559,7 +513,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
               << "/" << seqlen_ks[0]
               << (seqlen_kpads[0] < 0 ? ""
                                       : (std::string("(") + std::to_string(seqlen_kpads[0]) + ")"))
-              << ", d:" << hdim_q << "/" << hdim_v << ", scale_s:" << scale_s << ", bias:" << bias
+              << ", d:" << hdim_q << "/" << hdim_v << ", scale_s:" << scale_s
               << ", qscale:" << qscale << ", mask:" << mask
               << ", v:" << (is_v_rowmajor ? "r" : "c");
     // Padding / effective length diagnostic logging
@@ -619,14 +573,10 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         traits.is_v_rowmajor = is_v_rowmajor;
         traits.is_group_mode = (mode == mode_enum::group);
         traits.mask_type     = mask.type;
-        traits.bias_type     = bias.type;
         traits.qscale_type   = qscale.type;
     };
 
     const auto init_args = [&, k_paddings_ = seqlen_kpads](auto& args) {
-        /// NOTE: we broadcast bias from [1, 1, seqlen_q, seqlen_k] to [batch, nhead, seqlen_q,
-        ///       seqlen_k] in this example, hence both the 'batch_stride_bias' &
-        ///       'nhead_stride_bias' are 0.
         // setup stride_* arguments
         const ck_tile::index_t stride_q = (i_perm ? hdim_q : nhead * hdim_q);
         const ck_tile::index_t stride_k = (i_perm ? hdim_q : nhead_k * hdim_q);
@@ -636,8 +586,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             else
                 return i_perm ? shape_seqlen_k : nhead_k * shape_seqlen_k;
         }();
-        const ck_tile::index_t stride_bias = (i_perm ? max_seqlen_k : 1 * max_seqlen_k);
-        const ck_tile::index_t stride_o    = (o_perm ? hdim_v : nhead * hdim_v);
+        const ck_tile::index_t stride_o = (o_perm ? hdim_v : nhead * hdim_v);
         // setup nhead_stride_* arguments
         const ck_tile::index_t nhead_stride_q = (i_perm ? shape_seqlen_q * hdim_q : hdim_q);
         const ck_tile::index_t nhead_stride_k = (i_perm ? shape_seqlen_k * hdim_q : hdim_q);
@@ -647,17 +596,14 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             else
                 return i_perm ? hdim_v * shape_seqlen_k : shape_seqlen_k;
         }();
-        const ck_tile::index_t nhead_stride_bias =
-            (i_perm ? 0 * shape_seqlen_q * max_seqlen_k : 0 * max_seqlen_k);
         const ck_tile::index_t nhead_stride_lse = shape_seqlen_q;
         const ck_tile::index_t nhead_stride_o   = (o_perm ? shape_seqlen_q * hdim_v : hdim_v);
         // setup batch_stride_* arguments
-        const ck_tile::index_t batch_stride_q    = (nhead * shape_seqlen_q * hdim_q);
-        const ck_tile::index_t batch_stride_k    = (nhead_k * shape_seqlen_k * hdim_q);
-        const ck_tile::index_t batch_stride_v    = (nhead_k * hdim_v * shape_seqlen_k);
-        const ck_tile::index_t batch_stride_bias = (0 * nhead * shape_seqlen_q * max_seqlen_k);
-        const ck_tile::index_t batch_stride_lse  = (nhead * shape_seqlen_q);
-        const ck_tile::index_t batch_stride_o    = (nhead * shape_seqlen_q * hdim_v);
+        const ck_tile::index_t batch_stride_q   = (nhead * shape_seqlen_q * hdim_q);
+        const ck_tile::index_t batch_stride_k   = (nhead_k * shape_seqlen_k * hdim_q);
+        const ck_tile::index_t batch_stride_v   = (nhead_k * hdim_v * shape_seqlen_k);
+        const ck_tile::index_t batch_stride_lse = (nhead * shape_seqlen_q);
+        const ck_tile::index_t batch_stride_o   = (nhead * shape_seqlen_q * hdim_v);
         // setup split_stride_* arguments (only used in split-kv kernel)
 
         args.q_ptr    = q_buf.GetDeviceBuffer();
@@ -681,24 +627,18 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         args.batch_stride_v = batch_stride_v;
 
         // Setup sageattn_fwd_args
-        args.bias_ptr = bias.type == bias_enum::alibi ? alibi_slope_buf.GetDeviceBuffer()
-                                                      : bias_buf.GetDeviceBuffer();
-        args.o_ptr    = o_buf.GetDeviceBuffer();
+        args.o_ptr = o_buf.GetDeviceBuffer();
 
         args.seqlen_k     = shape_seqlen_k; // unused in group mode (or kvcache enabled)
         args.max_seqlen_q = max_seqlen_q;
 
         args.scale_s = scale_s;
 
-        args.stride_bias =
-            (bias.type == bias_enum::alibi ? (bias.rank_info == 0 ? 0 : nhead) : stride_bias);
-        args.stride_o          = stride_o;
-        args.nhead_stride_bias = nhead_stride_bias;
-        args.nhead_stride_lse  = nhead_stride_lse;
-        args.nhead_stride_o    = nhead_stride_o;
-        args.batch_stride_bias = batch_stride_bias;
-        args.batch_stride_lse  = batch_stride_lse;
-        args.batch_stride_o    = batch_stride_o;
+        args.stride_o         = stride_o;
+        args.nhead_stride_lse = nhead_stride_lse;
+        args.nhead_stride_o   = nhead_stride_o;
+        args.batch_stride_lse = batch_stride_lse;
+        args.batch_stride_o   = batch_stride_o;
 
         args.window_size_left  = mask.left;
         args.window_size_right = mask.right;
@@ -1012,71 +952,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                         ck_tile::scales(scale_s_host));
             }
 
-            if(bias.type == bias_enum::elementwise_bias)
-            {
-                // elementwise bias
-                ck_tile::HostTensor<BiasDataType> bias_host_ref({1, real_seqlen_q, real_seqlen_k});
-                // clang-format off
-                if(i_perm) bias_host_ref.ForEach([&](auto& self, auto i) { self(i) = bias_host(0, 0, i[1] + query_offset, i[2]); });
-                else       bias_host_ref.ForEach([&](auto& self, auto i) { self(i) = bias_host(0, i[1] + query_offset, 0, i[2]); });
-                // clang-format on
-
-                // broadcast from [1, real_seqlen_q, real_seqlen_k] to [nhead, real_seqlen_q,
-                // real_seqlen_k]
-                ck_tile::reference_batched_elementwise<SMPLComputeDataType,
-                                                       BiasDataType,
-                                                       SMPLComputeDataType,
-                                                       SMPLComputeDataType>(
-                    s_host_ref, bias_host_ref, s_host_ref);
-            }
-            else if(bias.type == bias_enum::alibi)
-            {
-                // alibi construct elementwise bias to verify
-                auto alibi_host = [&]() {
-                    if(mask.type != mask_enum::no_mask)
-                    {
-                        return ck_tile::make_alibi_from_lr_mask<SaccDataType, true>(
-                            0,
-                            mask.left,
-                            mask.right,
-                            real_seqlen_q,
-                            real_seqlen_k,
-                            static_cast<ck_tile::GenericAttentionMaskEnum>(mask.type));
-                    }
-                    else
-                    {
-                        return ck_tile::Alibi<SaccDataType, true>{
-                            0, real_seqlen_q, real_seqlen_k, ck_tile::AlibiMode::FROM_BOTTOM_RIGHT};
-                    }
-                }();
-
-                ck_tile::HostTensor<SaccDataType> alibi_bias_host_ref(
-                    {nhead, real_seqlen_q, real_seqlen_k});
-                auto i_b_slope = bias.rank_info == 0 ? 0 : wb;
-                for(auto i_h = 0; i_h < nhead; i_h++)
-                {
-                    SaccDataType current_slope = alibi_slope_host(i_b_slope, i_h);
-                    alibi_host.slope           = alibi_host.mode == ck_tile::AlibiMode::VERTICAL
-                                                     ? current_slope
-                                                     : -current_slope;
-                    for(auto i_r = 0; i_r < real_seqlen_q; i_r++)
-                    {
-                        for(auto i_c = 0; i_c < real_seqlen_k; i_c++)
-                        {
-                            SaccDataType pixel = 0;
-                            alibi_host.update(pixel, i_r, i_c);
-                            alibi_bias_host_ref(i_h, i_r, i_c) = pixel;
-                        }
-                    }
-                }
-                // [nhead, real_seqlen_q, real_seqlen_k]
-                ck_tile::reference_batched_elementwise<SMPLComputeDataType,
-                                                       SaccDataType,
-                                                       SMPLComputeDataType,
-                                                       SMPLComputeDataType>(
-                    s_host_ref, alibi_bias_host_ref, s_host_ref);
-            }
-
             if(mask.type == mask_enum::no_mask)
             {
                 ck_tile::reference_batched_masking<SaccDataType>(
@@ -1227,9 +1102,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                                    false, // lse (always disabled for sageattention)
                                    qscale.type == quant_scale_enum::no_scale ? "no_scale"
                                                                              : "pertensor",
-                                   bias.type == bias_enum::elementwise_bias
-                                       ? "elementwise_bias"
-                                       : (bias.type == bias_enum::alibi ? "alibi" : "no_bias"),
+                                   "no_bias",
                                    is_v_rowmajor ? "r" : "c",
                                    pass,
                                    ave_time,

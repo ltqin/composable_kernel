@@ -4,7 +4,6 @@
 #pragma once
 
 #include "ck_tile/core.hpp"
-#include "ck_tile/ops/fmha/block/block_attention_bias_enum.hpp"
 #include "ck_tile/ops/fmha/block/block_attention_quant_scale_enum.hpp"
 #include "ck_tile/ops/sageattention/pipeline/block_sageattn_pipeline_qr_ks_vs_default_policy.hpp"
 #include "ck_tile/ops/reduce/block/block_reduce.hpp"
@@ -22,7 +21,6 @@ struct BlockSageAttentionPipelineQRKSVS
     using VDataType           = remove_cvref_t<typename Problem::VDataType>;
     using SaccDataType        = remove_cvref_t<typename Problem::SaccDataType>;
     using SMPLComputeDataType = remove_cvref_t<typename Problem::SMPLComputeDataType>;
-    using BiasDataType        = remove_cvref_t<typename Problem::BiasDataType>;
     using PDataType           = remove_cvref_t<typename Problem::PDataType>;
     using OaccDataType        = remove_cvref_t<typename Problem::OaccDataType>;
     using ODataType           = remove_cvref_t<typename Problem::ODataType>;
@@ -51,7 +49,6 @@ struct BlockSageAttentionPipelineQRKSVS
     static constexpr bool kPadSeqLenK  = Problem::kPadSeqLenK;
     static constexpr bool kPadHeadDimQ = Problem::kPadHeadDimQ;
     static constexpr bool kPadHeadDimV = Problem::kPadHeadDimV;
-    static constexpr auto BiasEnum     = Problem::BiasEnum;
 
     static constexpr uint32_t DS_READ = 0x100; // Barrier for DS (data share) read
     static constexpr uint32_t MFMA    = 0x008; // Barrier for MFMA (matrix multiply-accumulate)
@@ -76,8 +73,6 @@ struct BlockSageAttentionPipelineQRKSVS
 
     static constexpr index_t kAlignmentO =
         kPadHeadDimV ? 1 : Policy::template GetAlignmentO<Problem>();
-    static constexpr index_t kAlignmentBias =
-        kPadSeqLenK ? 1 : Policy::template GetAlignmentBias<Problem>();
     static constexpr index_t kAlignmentRandVal =
         kPadSeqLenK ? 1 : Policy::template GetAlignmentRandVal<Problem>();
 
@@ -96,10 +91,7 @@ struct BlockSageAttentionPipelineQRKSVS
             }
             else if constexpr(kQKHeaddim <= 128)
             {
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-                    return 1;
-                else
-                    return 2;
+                return 2;
             }
             else if constexpr(kQKHeaddim <= 256)
             {
@@ -122,11 +114,9 @@ struct BlockSageAttentionPipelineQRKSVS
     template <typename QDramBlockWindowTmp,
               typename KDramBlockWindowTmp,
               typename VDramBlockWindowTmp,
-              typename BiasDramBlockWindowTmp,
               typename QElementFunction,
               typename KElementFunction,
               typename VElementFunction,
-              typename BiasElementFunction,
               typename SAccElementFunction,
               typename PComputeElementFunction,
               typename OAccElementFunction,
@@ -140,13 +130,11 @@ struct BlockSageAttentionPipelineQRKSVS
                const KElementFunction& k_element_func,
                const VDramBlockWindowTmp& v_dram_block_window_tmp, // N1*K1 tile
                const VElementFunction& v_element_func,
-               const BiasDramBlockWindowTmp& bias_dram_block_window_tmp, // M0*N0 tile
-               const BiasElementFunction& bias_element_func,
                const SAccElementFunction& s_acc_element_func,
                const PComputeElementFunction& p_compute_element_func,
                const OAccElementFunction& o_acc_element_func,
                FmhaMask mask,
-               PositionEncoding position_encoding,
+               PositionEncoding /*position_encoding*/,
                float scale_s,
                const AttentionVariant& variant,
                const AttentionVariantParams& variant_params,
@@ -168,9 +156,7 @@ struct BlockSageAttentionPipelineQRKSVS
                           kN0 == KDramBlockWindowTmp{}.get_window_lengths()[number<0>{}] &&
                           kK0 == KDramBlockWindowTmp{}.get_window_lengths()[number<1>{}] &&
                           kN1 == VDramBlockWindowTmp{}.get_window_lengths()[number<0>{}] &&
-                          kK1 == VDramBlockWindowTmp{}.get_window_lengths()[number<1>{}] &&
-                          kM0 == BiasDramBlockWindowTmp{}.get_window_lengths()[number<0>{}] &&
-                          kN0 == BiasDramBlockWindowTmp{}.get_window_lengths()[number<1>{}],
+                          kK1 == VDramBlockWindowTmp{}.get_window_lengths()[number<1>{}],
                       "wrong!");
 
         // K tile in LDS
@@ -254,13 +240,6 @@ struct BlockSageAttentionPipelineQRKSVS
                              k_dram_block_window_tmp.get_window_lengths(),
                              {0, 0});
 
-        const auto bias_origin = bias_dram_block_window_tmp.get_window_origin();
-        auto bias_dram_window =
-            make_tile_window(bias_dram_block_window_tmp.get_bottom_tensor_view(),
-                             bias_dram_block_window_tmp.get_window_lengths(),
-                             {bias_origin.at(number<0>{}), 0}, // M/N
-                             Policy::template MakeBiasDramTileDistribution<decltype(gemm_0)>());
-
         auto v_dram_window =
             make_tile_window(v_dram_block_window_tmp.get_bottom_tensor_view(),
                              v_dram_block_window_tmp.get_window_lengths(),
@@ -327,18 +306,6 @@ struct BlockSageAttentionPipelineQRKSVS
                 clear_tile(s_acc_gemm); // initialize C
                 store_tile(k_lds_window, tile_elementwise_in(k_element_func, k_block_tile));
                 k_block_tile = load_tile(k_dram_window);
-            }
-
-            if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-            {
-                __builtin_amdgcn_sched_barrier(
-                    0); // prevent from messing up the order of global loads
-            }
-            const auto bias_tile = load_tile(bias_dram_window); // load bias tile
-            if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-            {
-                __builtin_amdgcn_sched_barrier(
-                    0); // prevent from messing up the order of global loads
             }
 
             if constexpr(k0_loops > 2)
@@ -409,50 +376,11 @@ struct BlockSageAttentionPipelineQRKSVS
                     return s_acc_element_func;
             }();
 
-            // STAGE 2, scale_s, add bias, mask, softmax
-            if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
-            {
-                s_acc = tile_elementwise_in(s_acc_element_func_, s_acc);
-                tile_elementwise_inout([&scale_s](auto& x) { x = x * scale_s; }, s_acc);
-                tile_elementwise_inout(
-                    [&](auto& x, const auto& y) {
+            // STAGE 2, scale_s, mask, softmax
+            s_acc = tile_elementwise_in(s_acc_element_func_, s_acc);
 #if !CK_TILE_FMHA_FWD_FAST_EXP2
-                        x += type_convert<SaccDataType>(bias_element_func(y));
-#else
-                        x += log2e_v<SaccDataType> *
-                             type_convert<SaccDataType>(bias_element_func(y));
+            tile_elementwise_inout([&scale_s](auto& x) { x = x * scale_s; }, s_acc);
 #endif
-                    },
-                    s_acc,
-                    bias_tile);
-            }
-            else if constexpr(BiasEnum == BlockAttentionBiasEnum::ALIBI)
-            {
-                const auto k_origin    = k_dram_block_window.get_window_origin();
-                constexpr auto s_spans = decltype(s_acc)::get_distributed_spans();
-                s_acc                  = tile_elementwise_in(s_acc_element_func_, s_acc);
-                sweep_tile_span(s_spans[number<0>{}], [&](auto idx0) {
-                    sweep_tile_span(s_spans[number<1>{}], [&](auto idx1) {
-                        const auto tile_idx = get_x_indices_from_distributed_indices(
-                            s_acc.get_tile_distribution(), make_tuple(idx0, idx1));
-
-                        const auto row = q_origin.at(number<0>{}) + tile_idx.at(number<0>{});
-                        const auto col = k_origin.at(number<0>{}) + tile_idx.at(number<1>{});
-                        constexpr auto i_j_idx = make_tuple(idx0, idx1);
-
-                        s_acc(i_j_idx) *= scale_s;
-                        position_encoding.update(s_acc(i_j_idx), row, col);
-                    });
-                });
-            }
-            else
-            {
-                s_acc = tile_elementwise_in(s_acc_element_func_, s_acc);
-#if !CK_TILE_FMHA_FWD_FAST_EXP2
-                tile_elementwise_inout([&scale_s](auto& x) { x = x * scale_s; }, s_acc);
-#endif
-            }
-            move_tile_window(bias_dram_window, {0, kN0});
             if constexpr(kPadSeqLenK || FmhaMask::IsMasking)
             {
                 const auto k_origin      = k_dram_block_window.get_window_origin();
@@ -500,10 +428,7 @@ struct BlockSageAttentionPipelineQRKSVS
                 s.get_tile_distribution()); // Pcompute{j}
 
             static const auto get_validated_m = [](SMPLComputeDataType raw_m) {
-                /// NOTICE: bias might be materialized mask including -inf values, need
-                /// consideration
-                if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS ||
-                             FmhaMask::IsMasking)
+                if constexpr(FmhaMask::IsMasking)
                 {
                     return raw_m == -numeric<SMPLComputeDataType>::infinity()
                                ? type_convert<SMPLComputeDataType>(0.f)
@@ -539,17 +464,9 @@ struct BlockSageAttentionPipelineQRKSVS
                 sweep_tile_span(p_spans[number<1>{}], [&](auto idx1) {
                     constexpr auto i_j_idx = make_tuple(idx0, idx1);
 #if CK_TILE_FMHA_FWD_FAST_EXP2
-                    if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS ||
-                                 BiasEnum == BlockAttentionBiasEnum::ALIBI)
-                    {
-                        p_compute(i_j_idx) = exp2(s[i_j_idx] - validated_m);
-                    }
-                    else
-                    {
-                        p_compute(i_j_idx) = exp2(scale_s * s[i_j_idx] - row_max);
-                    }
+                    p_compute(i_j_idx) = exp2(scale_s * s[i_j_idx] - row_max);
 #else
-                    p_compute(i_j_idx)     = exp(s[i_j_idx] - get_validated_m(m[i_idx]));
+                    p_compute(i_j_idx) = exp(s[i_j_idx] - get_validated_m(m[i_idx]));
 #endif
                 });
             });
@@ -570,18 +487,8 @@ struct BlockSageAttentionPipelineQRKSVS
                 if(max_changed)
                 {
 #if CK_TILE_FMHA_FWD_FAST_EXP2
-                    const auto tmp = [&]() {
-                        if constexpr(BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS ||
-                                     BiasEnum == BlockAttentionBiasEnum::ALIBI)
-                        {
-                            return exp2(m_old[i_idx] - m_new);
-                        }
-                        else
-                        {
-                            auto row_max = scale_s * m_new;
-                            return exp2(scale_s * m_old[i_idx] - row_max);
-                        }
-                    }();
+                    auto row_max   = scale_s * m_new;
+                    const auto tmp = exp2(scale_s * m_old[i_idx] - row_max);
 #else
                     const auto tmp = exp(m_old[i_idx] - m_new);
 #endif
@@ -729,10 +636,9 @@ struct BlockSageAttentionPipelineQRKSVS
         sweep_tile_span(o_spans[number<0>{}], [&](auto idx0) {
             constexpr auto i_idx = make_tuple(idx0);
             const auto tmp       = [&]() {
-                // When bias carries -inf masks the denominator can be zero; guard the normalization
+                // When masking, the denominator can be zero; guard the normalization
                 // so we do not divide by zero after a fully masked row.
-                if constexpr(FmhaMask::IsMasking ||
-                             BiasEnum == BlockAttentionBiasEnum::ELEMENTWISE_BIAS)
+                if constexpr(FmhaMask::IsMasking)
                 {
                     return l[i_idx] == 0.f ? 0.f : 1 / l[i_idx];
                 }
@@ -753,15 +659,13 @@ struct BlockSageAttentionPipelineQRKSVS
     template <typename QDramBlockWindowTmp,
               typename KDramBlockWindowTmp,
               typename VDramBlockWindowTmp,
-              typename BiasDramBlockWindowTmp,
               typename PositionEncoding,
               typename AttentionVariantParams,
               typename BlockIndices>
     CK_TILE_HOST_DEVICE auto
-    operator()(const QDramBlockWindowTmp& q_dram_block_window_tmp,       // M0*K0 tile
-               const KDramBlockWindowTmp& k_dram_block_window_tmp,       // N0*K0 tile
-               const VDramBlockWindowTmp& v_dram_block_window_tmp,       // N1*K1 tile
-               const BiasDramBlockWindowTmp& bias_dram_block_window_tmp, // M0*N0 tile
+    operator()(const QDramBlockWindowTmp& q_dram_block_window_tmp, // M0*K0 tile
+               const KDramBlockWindowTmp& k_dram_block_window_tmp, // N0*K0 tile
+               const VDramBlockWindowTmp& v_dram_block_window_tmp, // N1*K1 tile
                FmhaMask mask,
                PositionEncoding position_encoding,
                float scale_s,
@@ -780,8 +684,6 @@ struct BlockSageAttentionPipelineQRKSVS
                           k_dram_block_window_tmp,
                           identity{},
                           v_dram_block_window_tmp,
-                          identity{},
-                          bias_dram_block_window_tmp,
                           identity{},
                           identity{},
                           identity{},
