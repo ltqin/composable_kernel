@@ -292,6 +292,7 @@ auto sageattn_fwd_create_kargs_and_grids(sageattn_fwd_args args)
                                                  args.nhead_stride_q_descale,
                                                  args.nhead_stride_k_descale,
                                                  args.nhead_stride_v_descale,
+                                                 args.batch_stride_v_descale,
                                                  args.block_scale_size_q,
                                                  args.block_scale_size_kv,
                                                  args.block_scale_seqstart_q_ptr,

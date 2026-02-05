@@ -193,12 +193,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
 
     quant_scale_info qscale = quant_scale_info::decode(qscale_str);
 
-    // Constraint: per-warp quantization requires V to be col-major
-    if(qscale.type == quant_scale_enum::perwarp)
-    {
-        is_v_rowmajor = false;
-    }
-
     // Note: block_scale_size_q_ and block_scale_size_kv_ should be greater than or equal to the
     // compute block size
     // PERWARP mode: Q=32 (warp size), KV=64 (2x warp size)
@@ -351,7 +345,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     // Per-warp V uses per-channel scale (col-major layout)
     ck_tile::HostTensor<float> v_descale_host(
         (qscale.type == quant_scale_enum::perwarp)
-            ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, hdim_v}
+            ? std::array<ck_tile::index_t, 3>{batch, nhead_k, hdim_v}
         : (qscale.type == quant_scale_enum::blockscale)
             ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, num_block_scale_kv}
             : std::array<ck_tile::index_t, 3>{1, 1, 1});
@@ -674,6 +668,11 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             {
                 args.block_scale_seqstart_q_ptr = block_scale_seqstart_q_buf.GetDeviceBuffer();
                 args.block_scale_seqstart_k_ptr = block_scale_seqstart_k_buf.GetDeviceBuffer();
+                // Per-warp V uses per-channel scale: batch_stride = nhead_k * hdim_v
+                // Blockscale V uses per-block scale: batch_stride = nhead_k * num_block_scale_kv
+                args.batch_stride_v_descale = (qscale.type == quant_scale_enum::perwarp)
+                                                  ? nhead_k * hdim_v
+                                                  : nhead_k * num_block_scale_kv;
             }
         }
 
@@ -959,7 +958,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                             ck_tile::idx_identity{},
                             [&](auto idx, auto value) {
                                 return ck_tile::type_convert<float>(value) *
-                                       v_descale_host(b_idx,
+                                       v_descale_host(wb,
                                                       std::get<0>(idx) / nr,
                                                       std::get<1>(idx)); // channel index
                             },

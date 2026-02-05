@@ -217,6 +217,7 @@ struct SageAttnFwdKernel
     {
         const int32_t* block_scale_seqstart_q_ptr = nullptr;
         const int32_t* block_scale_seqstart_k_ptr = nullptr;
+        ck_tile::index_t batch_stride_v_descale;
     };
 
     struct SageAttnFwdSkipMinSeqlenQKargs
@@ -597,6 +598,7 @@ struct SageAttnFwdKernel
                   ck_tile::index_t nhead_stride_q_descale,
                   ck_tile::index_t nhead_stride_k_descale,
                   ck_tile::index_t nhead_stride_v_descale,
+                  ck_tile::index_t batch_stride_v_descale,
                   ck_tile::index_t block_scale_size_q,
                   ck_tile::index_t block_scale_size_kv,
                   const void* block_scale_seqstart_q_ptr,
@@ -658,6 +660,8 @@ struct SageAttnFwdKernel
             kargs.nhead_stride_q_descale = nhead_stride_q_descale;
             kargs.nhead_stride_k_descale = nhead_stride_k_descale;
             kargs.nhead_stride_v_descale = nhead_stride_v_descale;
+
+            kargs.batch_stride_v_descale = batch_stride_v_descale;
 
             kargs.block_scale_size_q  = block_scale_size_q;
             kargs.block_scale_size_kv = block_scale_size_kv;
@@ -1010,7 +1014,9 @@ struct SageAttnFwdKernel
                 const long_index_t bkey_start   = kargs.block_scale_seqstart_k_ptr[i_batch];
                 batch_offset_q_descale          = bquery_start;
                 batch_offset_k_descale          = bkey_start;
-                batch_offset_v_descale          = bkey_start;
+                batch_offset_v_descale = (QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+                                             ? i_batch * kargs.batch_stride_v_descale
+                                             : bkey_start;
             }
             batch_offset_o = query_start * kargs.stride_o;
 

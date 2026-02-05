@@ -843,66 +843,6 @@ class KernelComponentFactoryGfx950(
     arch = ArchTrait("gfx950")
 
 
-class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
-    arch = ArchTrait("gfx12")
-
-    _DT_FP16_BF16 = ("fp16", "bf16")
-    _DT_FP8_FP8BF16 = ("fp8", "fp8bf16")
-    _DT_I8FP8BF16 = ("i8fp8bf16",)
-
-    @classmethod
-    def supported_dtypes(cls) -> Tuple[str]:
-        return cls._DT_FP16_BF16 + cls._DT_FP8_FP8BF16 + cls._DT_I8FP8BF16
-
-    @classmethod
-    def get_hdim_tile_size_dict(cls, dtype: str) -> Optional[dict]:
-        if dtype in cls._DT_FP16_BF16:
-            return {
-                #                             bm0, bn0, bk0, bn1, bk1,
-                ( 64,  64) : [SageAttnFwdTileSize( 64,  64,  32,  64,  32,   64,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
-                (128, 128) : [SageAttnFwdTileSize( 64,  64,  32, 128,  32,  128,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
-            }  # fmt: skip
-        elif dtype in cls._DT_FP8_FP8BF16:
-            return {
-                #                             bm0, bn0, bk0, bn1, bk1,
-                ( 64,  64) : [SageAttnFwdTileSize(128,  64,  32,  64,  32,   64,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
-                (128, 128) : [SageAttnFwdTileSize( 64,  64,  32, 128,  32,  128,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
-            }  # fmt: skip
-        elif dtype in cls._DT_I8FP8BF16:
-            return {
-                #                             bm0, bn0, bk0, bn1, bk1,
-                (128, 128) : [SageAttnFwdTileSize( 64,  64,  32, 128,  32,  128,  4, 1, 1,  4, 1, 1,  16, 16, 16,  16, 16, 16,  -1)],
-            }  # fmt: skip
-        else:
-            raise ValueError(f"unsupported dtype={dtype}")
-
-    @classmethod
-    def get_pipelines(
-        cls, dtype, hdim, hdim_v, receipt, mask_impl
-    ) -> List[SageAttnFwdPipeline]:
-        pipelines = []
-        if dtype in cls._DT_FP16_BF16:
-            qscale = "no"
-            skip = "f"  # skip: only false
-            for mask, vlayout in itertools.product(
-                get_mask_map(mask_impl).keys(),
-                ["row", "col"],  # Support both row and col major layouts
-            ):
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", qscale, mask, skip))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip))  # fmt: skip
-        elif dtype in cls._DT_FP8_FP8BF16 or dtype in cls._DT_I8FP8BF16:
-            # no need lse kernels
-            skip = "f"  # skip: only false
-            for mask, qscale, vlayout in itertools.product(
-                get_mask_map(mask_impl).keys(),
-                ["no", "pertensor", "blockscale", "perwarp"],
-                ["row", "col"],  # Support both row and col major layouts
-            ):
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", qscale, mask, skip))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip))  # fmt: skip
-        return pipelines
-
-
 class CustomFactory(KernelComponentFactoryGfx9, CompatibilityRuleFactoryGfx9):
     @classmethod
     def get_hdim_tile_size_dict(cls, dtype: str) -> Optional[dict]:
@@ -923,9 +863,6 @@ def get_factory(target: str):
         return KernelComponentFactoryGfx950
     if target.startswith("gfx9"):
         return KernelComponentFactoryGfx9
-
-    if target.startswith("gfx12"):
-        return KernelComponentFactoryGfx12
 
     raise Exception(f"Unsupported device target {target}")
 
