@@ -59,12 +59,7 @@ struct SageAttnFwdKernel
 
     static constexpr bool kUseAsyncCopy = SageAttnPipeline::Policy::AsyncCopy;
 
-    static constexpr bool kUseTrLoad = SageAttnPipeline::Problem::kUseTrLoad;
-#if defined(__gfx950__)
-    static constexpr bool kIsAvailable = true;
-#else
-    static constexpr bool kIsAvailable = !kUseTrLoad;
-#endif
+    static constexpr bool kIsAvailable              = true;
     static constexpr std::string_view kPipelineName = SageAttnPipeline::name;
 
     // clang-format off
@@ -123,8 +118,7 @@ struct SageAttnFwdKernel
             "_nbias" +
             (kHasMask ? "_mask" : "_nmask") +
             (kSkipMinSeqlenQ ? "_skip" : "_nskip") +
-            (QScaleEnum == BlockAttentionQuantScaleEnum::NO_SCALE ? "_nqscale" : "_pertensor") +
-            (kUseTrLoad ? "_trload" : "_ntrload");
+            (QScaleEnum == BlockAttentionQuantScaleEnum::NO_SCALE ? "_nqscale" : "_pertensor");
         
         #undef _SS_
         #undef _TS_
@@ -977,1051 +971,444 @@ struct SageAttnFwdKernel
 
     CK_TILE_DEVICE void run_(Kargs kargs) const
     {
-        if constexpr(kPipelineName != "qr_async_trload")
+        // allocate LDS
+        __shared__ char smem_ptr[GetSmemSize()];
+        // divide problem
+        const auto [i_tile_m, i_tile_n, i_nhead, i_batch] = GetTileIndex(kargs);
+        const index_t i_m0 = amd_wave_read_first_lane(i_tile_m * SageAttnPipeline::kM0);
+        const index_t i_n1 = amd_wave_read_first_lane(i_tile_n * SageAttnPipeline::kN1);
+
+        long_index_t batch_offset_q         = 0;
+        long_index_t batch_offset_k         = 0;
+        long_index_t batch_offset_v         = 0;
+        long_index_t batch_offset_o         = 0;
+        long_index_t batch_offset_q_descale = 0;
+        long_index_t batch_offset_k_descale = 0;
+        long_index_t batch_offset_v_descale = 0;
+
+        if constexpr(kIsGroupMode)
         {
-            // allocate LDS
-            __shared__ char smem_ptr[GetSmemSize()];
-            // divide problem
-            const auto [i_tile_m, i_tile_n, i_nhead, i_batch] = GetTileIndex(kargs);
-            const index_t i_m0 = amd_wave_read_first_lane(i_tile_m * SageAttnPipeline::kM0);
-            const index_t i_n1 = amd_wave_read_first_lane(i_tile_n * SageAttnPipeline::kN1);
+            // Use seqstart_q_ptr and seqstart_k_ptr for physical starts
+            const long_index_t query_start = kargs.seqstart_q_ptr[i_batch];
+            const long_index_t key_start   = kargs.seqstart_k_ptr[i_batch];
 
-            long_index_t batch_offset_q         = 0;
-            long_index_t batch_offset_k         = 0;
-            long_index_t batch_offset_v         = 0;
-            long_index_t batch_offset_o         = 0;
-            long_index_t batch_offset_q_descale = 0;
-            long_index_t batch_offset_k_descale = 0;
-            long_index_t batch_offset_v_descale = 0;
-
-            if constexpr(kIsGroupMode)
+            // DRAM base offsets use physical starts
+            batch_offset_q = query_start * kargs.stride_q;
+            batch_offset_k = key_start * kargs.stride_k;
+            if constexpr(std::is_same_v<VLayout, ck_tile::tensor_layout::gemm::RowMajor>)
             {
-                // Use seqstart_q_ptr and seqstart_k_ptr for physical starts
-                const long_index_t query_start = kargs.seqstart_q_ptr[i_batch];
-                const long_index_t key_start   = kargs.seqstart_k_ptr[i_batch];
-
-                // DRAM base offsets use physical starts
-                batch_offset_q = query_start * kargs.stride_q;
-                batch_offset_k = key_start * kargs.stride_k;
-                if constexpr(std::is_same_v<VLayout, ck_tile::tensor_layout::gemm::RowMajor>)
-                {
-                    batch_offset_v = key_start * kargs.stride_v;
-                }
-                else
-                {
-                    batch_offset_v = key_start;
-                }
-                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                             QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
-                {
-                    const long_index_t bquery_start = kargs.block_scale_seqstart_q_ptr[i_batch];
-                    const long_index_t bkey_start   = kargs.block_scale_seqstart_k_ptr[i_batch];
-                    batch_offset_q_descale          = bquery_start;
-                    batch_offset_k_descale          = bkey_start;
-                    batch_offset_v_descale          = bkey_start;
-                }
-                batch_offset_o = query_start * kargs.stride_o;
-
-                // real logical lengths (exclude PAD)
-                // Priority: seqlen_q_ptr > cu_seqlen_q_ptr > calculated from seqstart_q_ptr
-                if(kargs.seqlen_q_ptr != nullptr)
-                {
-                    kargs.seqlen_q = kargs.seqlen_q_ptr[i_batch];
-                }
-                else if(kargs.cu_seqlen_q_ptr != nullptr)
-                {
-                    kargs.seqlen_q =
-                        kargs.cu_seqlen_q_ptr[i_batch + 1] - kargs.cu_seqlen_q_ptr[i_batch];
-                }
-                else
-                {
-                    const auto adjusted_seqstart_q_ptr = kargs.seqstart_q_ptr + i_batch;
-                    kargs.seqlen_q = adjusted_seqstart_q_ptr[1] - adjusted_seqstart_q_ptr[0];
-                }
-
-                if constexpr(kSkipMinSeqlenQ)
-                {
-                    if(kargs.seqlen_q <= kargs.min_seqlen_q)
-                    {
-                        return;
-                    }
-                }
-
-                // terminate unnecessary blocks earlier
-                if(kargs.seqlen_q <= i_m0)
-                {
-                    return;
-                }
-
-                if(kargs.seqlen_k_ptr != nullptr)
-                {
-                    kargs.seqlen_k = kargs.seqlen_k_ptr[i_batch];
-                }
-                else if(kargs.cu_seqlen_k_ptr != nullptr)
-                {
-                    kargs.seqlen_k =
-                        kargs.cu_seqlen_k_ptr[i_batch + 1] - kargs.cu_seqlen_k_ptr[i_batch];
-                }
-                else
-                {
-                    const auto adjusted_seqstart_k_ptr = kargs.seqstart_k_ptr + i_batch;
-                    kargs.seqlen_k = adjusted_seqstart_k_ptr[1] - adjusted_seqstart_k_ptr[0];
-                }
+                batch_offset_v = key_start * kargs.stride_v;
             }
             else
             {
-                batch_offset_q = static_cast<long_index_t>(i_batch) * kargs.batch_stride_q;
-                batch_offset_k = static_cast<long_index_t>(i_batch) * kargs.batch_stride_k;
-                batch_offset_v = static_cast<long_index_t>(i_batch) * kargs.batch_stride_v;
-                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                             QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
-                {
-                    batch_offset_q_descale =
-                        static_cast<long_index_t>(i_batch) * kargs.batch_stride_q_descale;
-                    batch_offset_k_descale =
-                        static_cast<long_index_t>(i_batch) * kargs.batch_stride_k_descale;
-                    batch_offset_v_descale =
-                        static_cast<long_index_t>(i_batch) * kargs.batch_stride_v_descale;
-                }
-                batch_offset_o = static_cast<long_index_t>(i_batch) * kargs.batch_stride_o;
+                batch_offset_v = key_start;
+            }
+            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
+                         QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+            {
+                const long_index_t bquery_start = kargs.block_scale_seqstart_q_ptr[i_batch];
+                const long_index_t bkey_start   = kargs.block_scale_seqstart_k_ptr[i_batch];
+                batch_offset_q_descale          = bquery_start;
+                batch_offset_k_descale          = bkey_start;
+                batch_offset_v_descale          = bkey_start;
+            }
+            batch_offset_o = query_start * kargs.stride_o;
 
-                // If cumulative seqlen pointers are provided, override per-batch effective lengths
-                if(kargs.cu_seqlen_q_ptr != nullptr)
+            // real logical lengths (exclude PAD)
+            // Priority: seqlen_q_ptr > cu_seqlen_q_ptr > calculated from seqstart_q_ptr
+            if(kargs.seqlen_q_ptr != nullptr)
+            {
+                kargs.seqlen_q = kargs.seqlen_q_ptr[i_batch];
+            }
+            else if(kargs.cu_seqlen_q_ptr != nullptr)
+            {
+                kargs.seqlen_q =
+                    kargs.cu_seqlen_q_ptr[i_batch + 1] - kargs.cu_seqlen_q_ptr[i_batch];
+            }
+            else
+            {
+                const auto adjusted_seqstart_q_ptr = kargs.seqstart_q_ptr + i_batch;
+                kargs.seqlen_q = adjusted_seqstart_q_ptr[1] - adjusted_seqstart_q_ptr[0];
+            }
+
+            if constexpr(kSkipMinSeqlenQ)
+            {
+                if(kargs.seqlen_q <= kargs.min_seqlen_q)
                 {
-                    kargs.seqlen_q =
-                        kargs.cu_seqlen_q_ptr[i_batch + 1] - kargs.cu_seqlen_q_ptr[i_batch];
-                }
-                if(kargs.cu_seqlen_k_ptr != nullptr)
-                {
-                    kargs.seqlen_k =
-                        kargs.cu_seqlen_k_ptr[i_batch + 1] - kargs.cu_seqlen_k_ptr[i_batch];
+                    return;
                 }
             }
 
-            // for simplicity, batch stride we just modify the pointer
-            const QDataType* q_ptr = reinterpret_cast<const QDataType*>(kargs.q_ptr) +
-                                     static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q +
-                                     batch_offset_q;
-            const KDataType* k_ptr =
-                reinterpret_cast<const KDataType*>(kargs.k_ptr) +
-                static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) * kargs.nhead_stride_k +
-                batch_offset_k;
-            const VDataType* v_ptr =
-                reinterpret_cast<const VDataType*>(kargs.v_ptr) +
-                static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) * kargs.nhead_stride_v +
-                batch_offset_v;
-            ODataType* o_ptr = reinterpret_cast<ODataType*>(kargs.o_ptr) +
-                               static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_o +
-                               batch_offset_o;
+            // terminate unnecessary blocks earlier
+            if(kargs.seqlen_q <= i_m0)
+            {
+                return;
+            }
 
-            // Q/K/V DRAM and DRAM window
-            const auto q_dram = [&]() {
-                const auto q_dram_naive = make_naive_tensor_view<address_space_enum::global>(
-                    q_ptr,
-                    make_tuple(kargs.seqlen_q, kargs.hdim_q),
-                    make_tuple(kargs.stride_q, 1),
-                    number<SageAttnPipeline::kAlignmentQ>{},
-                    number<1>{});
-                if constexpr(SageAttnPipeline::kQLoadOnce)
-                {
-                    return pad_tensor_view(q_dram_naive,
-                                           make_tuple(number<SageAttnPipeline::kM0>{},
-                                                      number<SageAttnPipeline::kSubQKHeaddim>{}),
-                                           sequence<kPadSeqLenQ, kPadHeadDimQ>{});
-                }
-                else
-                {
-                    return pad_tensor_view(q_dram_naive,
-                                           make_tuple(number<SageAttnPipeline::kM0>{},
-                                                      number<SageAttnPipeline::kK0>{}),
-                                           sequence<kPadSeqLenQ, kPadHeadDimQ>{});
-                }
-            }();
-            const auto k_dram = [&]() {
-                const auto k_dram_naive = make_naive_tensor_view<address_space_enum::global>(
-                    k_ptr,
-                    make_tuple(kargs.seqlen_k, kargs.hdim_q),
-                    make_tuple(kargs.stride_k, 1),
-                    number<SageAttnPipeline::kAlignmentK>{},
-                    number<1>{});
-
-                constexpr bool kPadSeqLenK_ = kUseAsyncCopy ? kPadSeqLenK : false;
-                return pad_tensor_view(
-                    k_dram_naive,
-                    make_tuple(number<SageAttnPipeline::kN0>{}, number<SageAttnPipeline::kK0>{}),
-                    sequence<kPadSeqLenK_, kPadHeadDimQ>{});
-            }();
-            const auto v_dram = [&]() {
-                if constexpr(std::is_same_v<VLayout, ck_tile::tensor_layout::gemm::RowMajor>)
-                {
-                    const auto v_dram_naive = make_naive_tensor_view<address_space_enum::global>(
-                        v_ptr,
-                        make_tuple(kargs.seqlen_k, kargs.hdim_v),
-                        make_tuple(kargs.stride_v, 1),
-                        number<SageAttnPipeline::kAlignmentV>{},
-                        number<1>{});
-
-                    const auto v_dram_transposed = transform_tensor_view(
-                        v_dram_naive,
-                        make_tuple(make_pass_through_transform(kargs.hdim_v),
-                                   make_pass_through_transform(kargs.seqlen_k)),
-                        make_tuple(sequence<1>{}, sequence<0>{}),
-                        make_tuple(sequence<0>{}, sequence<1>{}));
-
-                    constexpr bool kPadSeqLenK_ = kUseAsyncCopy ? kPadSeqLenK : false;
-                    return pad_tensor_view(v_dram_transposed,
-                                           make_tuple(number<SageAttnPipeline::kN1>{},
-                                                      number<SageAttnPipeline::kK1>{}),
-                                           sequence<kPadHeadDimV, kPadSeqLenK_>{});
-                }
-                else
-                {
-                    const auto v_dram_naive = make_naive_tensor_view<address_space_enum::global>(
-                        v_ptr,
-                        make_tuple(kargs.hdim_v, kargs.seqlen_k),
-                        make_tuple(kargs.stride_v, 1),
-                        number<SageAttnPipeline::kAlignmentV>{},
-                        number<1>{});
-
-                    constexpr bool kPadHeadDimV_ = kUseAsyncCopy ? kPadHeadDimV : false;
-                    return pad_tensor_view(v_dram_naive,
-                                           make_tuple(number<SageAttnPipeline::kN1>{},
-                                                      number<SageAttnPipeline::kK1>{}),
-                                           sequence<kPadHeadDimV_, kPadSeqLenK>{});
-                }
-            }();
-
-            auto q_dram_window = make_tile_window(
-                q_dram,
-                [&]() {
-                    if constexpr(SageAttnPipeline::kQLoadOnce)
-                        return make_tuple(number<SageAttnPipeline::kM0>{},
-                                          number<SageAttnPipeline::kSubQKHeaddim>{});
-                    else
-                        return make_tuple(number<SageAttnPipeline::kM0>{},
-                                          number<SageAttnPipeline::kK0>{});
-                }(),
-                {i_m0, 0});
-
-            auto k_dram_window = make_tile_window(
-                k_dram,
-                make_tuple(number<SageAttnPipeline::kN0>{}, number<SageAttnPipeline::kK0>{}),
-                {0, 0});
-
-            auto v_dram_window = make_tile_window(
-                v_dram,
-                make_tuple(number<SageAttnPipeline::kN1>{}, number<SageAttnPipeline::kK1>{}),
-                {i_n1, 0});
-            /// FIXME: Before C++20, capturing structured binding variables are not supported.
-            /// Remove following copy capture of the 'i_nhead' if in C++20
-
-            FmhaMask mask = [&]() {
-                if constexpr(kHasMask)
-                    return ck_tile::make_generic_attention_mask_from_lr_window<FmhaMask>(
-                        kargs.window_size_left,
-                        kargs.window_size_right,
-                        0,
-                        kargs.seqlen_q,
-                        kargs.seqlen_k,
-                        kargs.mask_type == GenericAttentionMaskEnum::MASK_FROM_TOP_LEFT);
-                else
-                    return FmhaMask{kargs.seqlen_q, kargs.seqlen_k};
-            }();
-
-            // WA i_batch capture structure binding before c++20
-            auto position_encoding = EmptyPositionEncoding<SaccDataType>{};
-
-            AttentionVariant variant;
-            const auto variant_params = [&] {
-                const float scale_s = [&] {
-                    if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
-                    {
-                        float q_descale = *(reinterpret_cast<const float*>(kargs.q_descale_ptr));
-                        float k_descale = *(reinterpret_cast<const float*>(kargs.k_descale_ptr));
-
-                        return kargs.scale_s * q_descale * k_descale;
-                    }
-                    else
-                    {
-                        return kargs.scale_s;
-                    }
-                }();
-
-                // logits_soft_cap is always disabled, use standard attention params
-                return ck_tile::StandardAttentionParams<FmhaMask>{mask, scale_s};
-            }();
-
-            BlockIndices block_indices{i_batch, i_nhead, i_nhead / kargs.nhead_ratio_qk};
-            auto o_acc_tile = [&]() {
-                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
-                {
-                    // TODO - move global load of descale to pipeline
-                    float v_descale = *(reinterpret_cast<const float*>(kargs.v_descale_ptr));
-
-                    float scale_p =
-                        ck_tile::type_convert<float>(ck_tile::numeric<PDataType>::max());
-                    float scale_o = v_descale / scale_p;
-
-                    auto o_acc_element_func = [&]() {
-                        if constexpr(std::is_same_v<ODataType, ck_tile::fp8_t>)
-                            return make_composes(
-                                ck_tile::saturates<ck_tile::fp8_t>{},
-                                ck_tile::scales<remove_cvref_t<decltype(scale_o)>>{scale_o});
-                        else
-                            return ck_tile::scales<remove_cvref_t<decltype(scale_o)>>{scale_o};
-                    }();
-                    return SageAttnPipeline{}(q_dram_window,
-                                              identity{}, // q_element_func
-                                              k_dram_window,
-                                              identity{}, // k_element_func
-                                              v_dram_window,
-                                              identity{}, // v_element_func
-                                              identity{}, // s_acc_element_func
-                                              scales<remove_cvref_t<decltype(scale_p)>>{
-                                                  scale_p},       // p_compute_element_func
-                                              o_acc_element_func, // o_acc_element_func
-                                              mask,
-                                              position_encoding,
-                                              variant_params.sm_scale,
-                                              variant,
-                                              variant_params,
-                                              block_indices,
-                                              smem_ptr);
-                }
-                else if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
-                {
-                    const float* q_descale_ptr =
-                        reinterpret_cast<const float*>(kargs.q_descale_ptr) +
-                        static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q_descale +
-                        batch_offset_q_descale;
-                    const float* k_descale_ptr =
-                        reinterpret_cast<const float*>(kargs.k_descale_ptr) +
-                        static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
-                            kargs.nhead_stride_k_descale +
-                        batch_offset_k_descale;
-                    const float* v_descale_ptr =
-                        reinterpret_cast<const float*>(kargs.v_descale_ptr) +
-                        static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
-                            kargs.nhead_stride_v_descale +
-                        batch_offset_v_descale;
-
-                    // BLOCKSCALE: one q_descale per tile (block_scale_size_q=128)
-                    size_t idx      = i_m0 / kargs.block_scale_size_q;
-                    float q_descale = q_descale_ptr[idx];
-
-                    return SageAttnPipeline{}(
-                        q_dram_window,
-                        identity{}, // q_element_func
-                        k_dram_window,
-                        identity{}, // k_element_func
-                        v_dram_window,
-                        identity{},               // v_element_func
-                        scales<float>(q_descale), // s_acc_element_func
-                        identity{}, // p_compute_element_func - No scaling (done in exp2)
-                        identity{}, // o_acc_element_func - No dequant (canceled by rowsum)
-                        mask,
-                        position_encoding,
-                        kargs.scale_s,
-                        variant,
-                        variant_params,
-                        block_indices,
-                        smem_ptr,
-                        nullptr,
-                        k_descale_ptr,
-                        v_descale_ptr,
-                        0,
-                        kargs.block_scale_size_kv);
-                }
-                else if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
-                {
-                    const float* q_descale_ptr =
-                        reinterpret_cast<const float*>(kargs.q_descale_ptr) +
-                        static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q_descale +
-                        batch_offset_q_descale;
-                    const float* k_descale_ptr =
-                        reinterpret_cast<const float*>(kargs.k_descale_ptr) +
-                        static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
-                            kargs.nhead_stride_k_descale +
-                        batch_offset_k_descale;
-                    const float* v_descale_ptr =
-                        reinterpret_cast<const float*>(kargs.v_descale_ptr) +
-                        static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
-                            kargs.nhead_stride_v_descale +
-                        batch_offset_v_descale;
-
-                    // PERWARP: one q_descale per warp (block_scale_size_q=32)
-                    // Each tile has kM0 rows (e.g., 128), divided into kM0/32 = 4 groups
-                    // Each wave within a block processes different rows
-                    constexpr index_t wave_size = 64; // AMD GPU wave size
-                    const index_t wave_id = __builtin_amdgcn_readfirstlane(threadIdx.x / wave_size);
-
-                    const size_t tile_base_idx = i_m0 / kargs.block_scale_size_q;
-                    const size_t idx           = tile_base_idx + wave_id;
-                    const float q_descale      = q_descale_ptr[idx];
-
-                    return SageAttnPipeline{}(
-                        q_dram_window,
-                        identity{}, // q_element_func
-                        k_dram_window,
-                        identity{}, // k_element_func
-                        v_dram_window,
-                        identity{},               // v_element_func
-                        scales<float>(q_descale), // s_acc_element_func - per-warp q_descale
-                        identity{}, // p_compute_element_func - No scaling (done in exp2)
-                        identity{}, // o_acc_element_func - No dequant (canceled by rowsum)
-                        mask,
-                        position_encoding,
-                        kargs.scale_s,
-                        variant,
-                        variant_params,
-                        block_indices,
-                        smem_ptr,
-                        nullptr,
-                        k_descale_ptr,
-                        v_descale_ptr,
-                        0,
-                        kargs.block_scale_size_kv);
-                }
-                else
-                {
-                    return SageAttnPipeline{}(q_dram_window,
-                                              k_dram_window,
-                                              v_dram_window,
-                                              mask,
-                                              position_encoding,
-                                              variant_params.sm_scale,
-                                              variant,
-                                              variant_params,
-                                              block_indices,
-                                              smem_ptr);
-                }
-            }();
-
-            // O DRAM and O DRAM window
-            auto o_dram = [&]() {
-                const auto o_dram_naive = make_naive_tensor_view<address_space_enum::global>(
-                    o_ptr,
-                    make_tuple(kargs.seqlen_q, kargs.hdim_v),
-                    make_tuple(kargs.stride_o, 1),
-                    number<SageAttnPipeline::kAlignmentO>{},
-                    number<1>{});
-
-                return pad_tensor_view(
-                    o_dram_naive,
-                    make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kN1>{}),
-                    sequence<kPadSeqLenQ, kPadHeadDimV>{});
-            }();
-
-            auto o_dram_window = make_tile_window(
-                o_dram,
-                make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kN1>{}),
-                {i_m0, i_n1});
-
-            EpiloguePipeline{}(o_dram_window, o_acc_tile, nullptr);
+            if(kargs.seqlen_k_ptr != nullptr)
+            {
+                kargs.seqlen_k = kargs.seqlen_k_ptr[i_batch];
+            }
+            else if(kargs.cu_seqlen_k_ptr != nullptr)
+            {
+                kargs.seqlen_k =
+                    kargs.cu_seqlen_k_ptr[i_batch + 1] - kargs.cu_seqlen_k_ptr[i_batch];
+            }
+            else
+            {
+                const auto adjusted_seqstart_k_ptr = kargs.seqstart_k_ptr + i_batch;
+                kargs.seqlen_k = adjusted_seqstart_k_ptr[1] - adjusted_seqstart_k_ptr[0];
+            }
         }
         else
         {
-            // TODO: Refine the logical here.
-            // In Decode case
-            //     1. we don't expect KV data reused by different ThreadGroups, bypass the cache
-            //     2. limit the LDS usage, as we want higher occupancy
-            // In Prefill case
-            //     1. we expect KV data reused by different ThreadGroups, use cache
-            //     2. use more LDS, as we want better memory latency hiding
-            // If SplitKV off, we don't expect Q data reused by different ThreadGroups, bypass the
-            // cache
-            constexpr bool PrefillCase = SageAttnPipeline::kM0 > 64;
-            // divide problem
-            const auto [i_tile_m, i_tile_n, i_nhead, i_batch] = GetTileIndex(kargs);
-
-            const index_t i_m0 = i_tile_m * SageAttnPipeline::kM0;
-            const index_t i_n1 = i_tile_n * SageAttnPipeline::kN1;
-
-            long_index_t batch_offset_q = 0;
-            long_index_t batch_offset_k = 0; // unused for paged-kvcache
-            long_index_t batch_offset_v = 0; // unused for paged-kvcache
-            long_index_t batch_offset_o = 0;
-            // index_t kv_l2p_offset =
-            //     0; // logical-to-physical offset of seqlen_k coordinate. only used for
-            //     paged-kvcache
-
-            if constexpr(kIsGroupMode)
+            batch_offset_q = static_cast<long_index_t>(i_batch) * kargs.batch_stride_q;
+            batch_offset_k = static_cast<long_index_t>(i_batch) * kargs.batch_stride_k;
+            batch_offset_v = static_cast<long_index_t>(i_batch) * kargs.batch_stride_v;
+            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
+                         QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
             {
-                // get starting offset for each batch - use seqstart_q_ptr/seqstart_k_ptr for
-                // physical starts
-                const long_index_t query_start = kargs.seqstart_q_ptr[i_batch];
-                const long_index_t key_start   = kargs.seqstart_k_ptr[i_batch];
+                batch_offset_q_descale =
+                    static_cast<long_index_t>(i_batch) * kargs.batch_stride_q_descale;
+                batch_offset_k_descale =
+                    static_cast<long_index_t>(i_batch) * kargs.batch_stride_k_descale;
+                batch_offset_v_descale =
+                    static_cast<long_index_t>(i_batch) * kargs.batch_stride_v_descale;
+            }
+            batch_offset_o = static_cast<long_index_t>(i_batch) * kargs.batch_stride_o;
 
-                batch_offset_q = query_start * kargs.stride_q;
-                batch_offset_k = key_start * kargs.stride_k;
-                if constexpr(std::is_same_v<VLayout, ck_tile::tensor_layout::gemm::RowMajor>)
-                {
-                    batch_offset_v = key_start * kargs.stride_v;
-                }
-                else
-                {
-                    // col-major V: offset along seqlen dimension is scalar index
-                    batch_offset_v = key_start;
-                }
+            // If cumulative seqlen pointers are provided, override per-batch effective lengths
+            if(kargs.cu_seqlen_q_ptr != nullptr)
+            {
+                kargs.seqlen_q =
+                    kargs.cu_seqlen_q_ptr[i_batch + 1] - kargs.cu_seqlen_q_ptr[i_batch];
+            }
+            if(kargs.cu_seqlen_k_ptr != nullptr)
+            {
+                kargs.seqlen_k =
+                    kargs.cu_seqlen_k_ptr[i_batch + 1] - kargs.cu_seqlen_k_ptr[i_batch];
+            }
+        }
 
-                batch_offset_o = query_start * kargs.stride_o;
+        // for simplicity, batch stride we just modify the pointer
+        const QDataType* q_ptr = reinterpret_cast<const QDataType*>(kargs.q_ptr) +
+                                 static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q +
+                                 batch_offset_q;
+        const KDataType* k_ptr =
+            reinterpret_cast<const KDataType*>(kargs.k_ptr) +
+            static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) * kargs.nhead_stride_k +
+            batch_offset_k;
+        const VDataType* v_ptr =
+            reinterpret_cast<const VDataType*>(kargs.v_ptr) +
+            static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) * kargs.nhead_stride_v +
+            batch_offset_v;
+        ODataType* o_ptr = reinterpret_cast<ODataType*>(kargs.o_ptr) +
+                           static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_o +
+                           batch_offset_o;
 
-                // get real # queries & # keys under group mode
-                if(kargs.seqlen_q_ptr != nullptr)
-                {
-                    kargs.seqlen_q = kargs.seqlen_q_ptr[i_batch];
-                }
-                else if(kargs.cu_seqlen_q_ptr != nullptr)
-                {
-                    kargs.seqlen_q =
-                        kargs.cu_seqlen_q_ptr[i_batch + 1] - kargs.cu_seqlen_q_ptr[i_batch];
-                }
-                else
-                {
-                    kargs.seqlen_q =
-                        kargs.seqstart_q_ptr[i_batch + 1] - kargs.seqstart_q_ptr[i_batch];
-                }
-
-                // # of required blocks is different in each groups, terminate unnecessary blocks
-                // earlier
-                if(kargs.seqlen_q <= i_m0)
-                {
-                    return;
-                }
-
-                if(kargs.seqlen_k_ptr != nullptr)
-                {
-                    kargs.seqlen_k = kargs.seqlen_k_ptr[i_batch];
-                }
-                else if(kargs.cu_seqlen_k_ptr != nullptr)
-                {
-                    kargs.seqlen_k =
-                        kargs.cu_seqlen_k_ptr[i_batch + 1] - kargs.cu_seqlen_k_ptr[i_batch];
-                }
-                else
-                {
-                    kargs.seqlen_k =
-                        kargs.seqstart_k_ptr[i_batch + 1] - kargs.seqstart_k_ptr[i_batch];
-                }
+        // Q/K/V DRAM and DRAM window
+        const auto q_dram = [&]() {
+            const auto q_dram_naive = make_naive_tensor_view<address_space_enum::global>(
+                q_ptr,
+                make_tuple(kargs.seqlen_q, kargs.hdim_q),
+                make_tuple(kargs.stride_q, 1),
+                number<SageAttnPipeline::kAlignmentQ>{},
+                number<1>{});
+            if constexpr(SageAttnPipeline::kQLoadOnce)
+            {
+                return pad_tensor_view(q_dram_naive,
+                                       make_tuple(number<SageAttnPipeline::kM0>{},
+                                                  number<SageAttnPipeline::kSubQKHeaddim>{}),
+                                       sequence<kPadSeqLenQ, kPadHeadDimQ>{});
             }
             else
             {
-                batch_offset_q = static_cast<long_index_t>(i_batch) * kargs.batch_stride_q;
-                batch_offset_k = static_cast<long_index_t>(i_batch) * kargs.batch_stride_k;
-                batch_offset_v = static_cast<long_index_t>(i_batch) * kargs.batch_stride_v;
-                batch_offset_o = static_cast<long_index_t>(i_batch) * kargs.batch_stride_o;
-
-                // If cumulative seqlen pointers are provided, override per-batch effective lengths
-                if(kargs.cu_seqlen_q_ptr != nullptr)
-                {
-                    kargs.seqlen_q =
-                        kargs.cu_seqlen_q_ptr[i_batch + 1] - kargs.cu_seqlen_q_ptr[i_batch];
-                }
-                if(kargs.cu_seqlen_k_ptr != nullptr)
-                {
-                    kargs.seqlen_k =
-                        kargs.cu_seqlen_k_ptr[i_batch + 1] - kargs.cu_seqlen_k_ptr[i_batch];
-                }
+                return pad_tensor_view(
+                    q_dram_naive,
+                    make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kK0>{}),
+                    sequence<kPadSeqLenQ, kPadHeadDimQ>{});
             }
+        }();
+        const auto k_dram = [&]() {
+            const auto k_dram_naive = make_naive_tensor_view<address_space_enum::global>(
+                k_ptr,
+                make_tuple(kargs.seqlen_k, kargs.hdim_q),
+                make_tuple(kargs.stride_k, 1),
+                number<SageAttnPipeline::kAlignmentK>{},
+                number<1>{});
 
-            // for simplicity, batch stride we just modify the pointer
-            const index_t i_nhead_k = i_nhead / kargs.nhead_ratio_qk;
-
-            const QDataType* q_ptr = reinterpret_cast<const QDataType*>(kargs.q_ptr) +
-                                     static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q +
-                                     batch_offset_q;
-            const KDataType* k_ptr = reinterpret_cast<const KDataType*>(kargs.k_ptr) +
-                                     static_cast<long_index_t>(i_nhead_k) * kargs.nhead_stride_k +
-                                     batch_offset_k;
-            const VDataType* v_ptr = reinterpret_cast<const VDataType*>(kargs.v_ptr) +
-                                     static_cast<long_index_t>(i_nhead_k) * kargs.nhead_stride_v +
-                                     batch_offset_v;
-
-            ODataType* o_ptr = reinterpret_cast<ODataType*>(kargs.o_ptr) +
-                               static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_o +
-                               batch_offset_o;
-
-            // Q/K/V DRAM and DRAM window
-            const auto q_dram = [&] {
-                const auto q_dram_naive = [&] {
-                    {
-                        return make_naive_tensor_view<address_space_enum::global,
-                                                      memory_operation_enum::set,
-                                                      amd_buffer_coherence_enum::SYSTEM_NT1>(
-                            q_ptr,
-                            make_tuple(kargs.seqlen_q, kargs.hdim_q),
-                            make_tuple(kargs.stride_q, 1),
-                            number<SageAttnPipeline::kAlignmentQ>{},
-                            number<1>{});
-                    }
-                }();
-
-                if constexpr(SageAttnPipeline::kQLoadOnce)
-                {
-                    const auto seqlen_q = kargs.seqlen_q;
-                    const auto q_dram_pad =
-                        pad_tensor_view(q_dram_naive,
-                                        make_tuple(number<SageAttnPipeline::kM0>{},
-                                                   number<SageAttnPipeline::kK0>{}),
-                                        sequence<false, kPadHeadDimQ>{});
-#if CK_TILE_FMHA_HANDLE_XOR_LENGTH_FOLD
-                    constexpr index_t LDSLayerSize  = 256 / sizeof(QDataType);
-                    constexpr index_t XorLengthFold = LDSLayerSize / (SageAttnPipeline::kQKHeaddim);
-
-                    if constexpr(XorLengthFold > 1)
-                    {
-                        const auto q_dram_unmerged = transform_tensor_view(
-                            q_dram_pad,
-                            make_tuple(make_unmerge_transform(
-                                           make_tuple(seqlen_q / XorLengthFold, XorLengthFold)),
-                                       make_pass_through_transform(
-                                           number<SageAttnPipeline::kQKHeaddim>{})),
-                            make_tuple(sequence<0>{}, sequence<1>{}),
-                            make_tuple(sequence<0, 1>{}, sequence<2>{}));
-
-                        const auto q_dram_merged = transform_tensor_view(
-                            q_dram_unmerged,
-                            make_tuple(make_pass_through_transform(seqlen_q / XorLengthFold),
-                                       make_merge_transform_v3_division_mod(make_tuple(
-                                           XorLengthFold, number<SageAttnPipeline::kQKHeaddim>{}))),
-                            make_tuple(sequence<0>{}, sequence<1, 2>{}),
-                            make_tuple(sequence<0>{}, sequence<1>{}));
-
-                        const auto q_dram_unmerged_xor = transform_tensor_view(
-                            q_dram_merged,
-                            make_tuple(make_pass_through_transform(seqlen_q / XorLengthFold),
-                                       make_unmerge_transform(make_tuple(
-                                           number<LDSLayerSize / SageAttnPipeline::kAlignmentQ>{},
-                                           number<SageAttnPipeline::kAlignmentQ>{}))),
-                            make_tuple(sequence<0>{}, sequence<1>{}),
-                            make_tuple(sequence<0>{}, sequence<1, 2>{}));
-
-                        const auto q_dram_permuted = transform_tensor_view(
-                            q_dram_unmerged_xor,
-                            make_tuple(make_xor_transform(make_tuple(
-                                           seqlen_q / XorLengthFold,
-                                           number<LDSLayerSize / SageAttnPipeline::kAlignmentQ>{})),
-                                       make_pass_through_transform(
-                                           number<SageAttnPipeline::kAlignmentQ>{})),
-                            make_tuple(sequence<0, 1>{}, sequence<2>{}),
-                            make_tuple(sequence<0, 1>{}, sequence<2>{}));
-
-                        const auto q_dram_tmp = transform_tensor_view(
-                            q_dram_permuted,
-                            make_tuple(make_pass_through_transform(seqlen_q / XorLengthFold),
-                                       make_unmerge_transform(
-                                           make_tuple(number<XorLengthFold>{},
-                                                      number<SageAttnPipeline::kQKHeaddim /
-                                                             SageAttnPipeline::kAlignmentQ>{})),
-                                       make_pass_through_transform(
-                                           number<SageAttnPipeline::kAlignmentQ>{})),
-                            make_tuple(sequence<0>{}, sequence<1>{}, sequence<2>{}),
-                            make_tuple(sequence<0>{}, sequence<1, 2>{}, sequence<3>{}));
-
-                        return transform_tensor_view(
-                            q_dram_tmp,
-                            make_tuple(make_merge_transform_v3_division_mod(make_tuple(
-                                           seqlen_q / XorLengthFold, number<XorLengthFold>{})),
-                                       make_merge_transform_v3_division_mod(
-                                           make_tuple(number<SageAttnPipeline::kQKHeaddim /
-                                                             SageAttnPipeline::kAlignmentQ>{},
-                                                      number<SageAttnPipeline::kAlignmentQ>{}))),
-                            make_tuple(sequence<0, 1>{}, sequence<2, 3>{}),
-                            make_tuple(sequence<0>{}, sequence<1>{}));
-                    }
-                    else
-#endif // CK_TILE_FMHA_HANDLE_XOR_LENGTH_FOLD
-                    {
-                        const auto q_dram_unmerged = transform_tensor_view(
-                            q_dram_pad,
-                            make_tuple(make_pass_through_transform(seqlen_q),
-                                       make_unmerge_transform(
-                                           make_tuple(number<SageAttnPipeline::kQKHeaddim /
-                                                             SageAttnPipeline::kAlignmentQ>{},
-                                                      number<SageAttnPipeline::kAlignmentQ>{}))),
-                            make_tuple(sequence<0>{}, sequence<1>{}),
-                            make_tuple(sequence<0>{}, sequence<1, 2>{}));
-
-                        const auto q_dram_permuted = transform_tensor_view(
-                            q_dram_unmerged,
-                            make_tuple(make_xor_transform(
-                                           make_tuple(seqlen_q,
-                                                      number<SageAttnPipeline::kQKHeaddim /
-                                                             SageAttnPipeline::kAlignmentQ>{})),
-                                       make_pass_through_transform(
-                                           number<SageAttnPipeline::kAlignmentQ>{})),
-                            make_tuple(sequence<0, 1>{}, sequence<2>{}),
-                            make_tuple(sequence<0, 1>{}, sequence<2>{}));
-
-                        return transform_tensor_view(
-                            q_dram_permuted,
-                            make_tuple(make_pass_through_transform(seqlen_q),
-                                       make_merge_transform_v3_division_mod(
-                                           make_tuple(number<SageAttnPipeline::kQKHeaddim /
-                                                             SageAttnPipeline::kAlignmentQ>{},
-                                                      number<SageAttnPipeline::kAlignmentQ>{}))),
-                            make_tuple(sequence<0>{}, sequence<1, 2>{}),
-                            make_tuple(sequence<0>{}, sequence<1>{}));
-                    }
-                }
-                else
-                {
-                    return pad_tensor_view(q_dram_naive,
-                                           make_tuple(number<SageAttnPipeline::kM0>{},
-                                                      number<SageAttnPipeline::kK0>{}),
-                                           sequence<false, kPadHeadDimQ>{});
-                }
-            }();
-
-            const auto make_k_dram = [&](const KDataType* data, index_t height) {
-                const auto k_dram_naive = make_naive_tensor_view<address_space_enum::global>(
-                    data, // will update this pointer if using paged-kvcache
-                    make_tuple(height, kargs.hdim_q),
-                    make_tuple(kargs.stride_k, 1),
-                    number<SageAttnPipeline::kAlignmentK>{},
-                    number<1>{});
-
-                const auto k_dram_pad = pad_tensor_view(
-                    k_dram_naive,
-                    make_tuple(number<SageAttnPipeline::kN0>{}, number<SageAttnPipeline::kK0>{}),
-                    sequence<false, kPadHeadDimQ>{});
-
-                constexpr auto kDramTileK = SageAttnPipeline::kKLoadOnce
-                                                ? SageAttnPipeline::kQKHeaddim
-                                                : SageAttnPipeline::kK0;
-
-#if CK_TILE_FMHA_HANDLE_XOR_LENGTH_FOLD
-                constexpr index_t LDSLayerSize  = 256 / sizeof(KDataType);
-                constexpr index_t XorLengthFold = LDSLayerSize / (SageAttnPipeline::kQKHeaddim);
-
-                if constexpr(XorLengthFold > 1)
-                {
-                    const auto k_dram_unmerged = transform_tensor_view(
-                        k_dram_pad,
-                        make_tuple(
-                            make_unmerge_transform(
-                                make_tuple(height / XorLengthFold, XorLengthFold)),
-                            make_pass_through_transform(number<SageAttnPipeline::kQKHeaddim>{})),
-                        make_tuple(sequence<0>{}, sequence<1>{}),
-                        make_tuple(sequence<0, 1>{}, sequence<2>{}));
-
-                    const auto k_dram_merged = transform_tensor_view(
-                        k_dram_unmerged,
-                        make_tuple(make_pass_through_transform(height / XorLengthFold),
-                                   make_merge_transform_v3_division_mod(make_tuple(
-                                       XorLengthFold, number<SageAttnPipeline::kQKHeaddim>{}))),
-                        make_tuple(sequence<0>{}, sequence<1, 2>{}),
-                        make_tuple(sequence<0>{}, sequence<1>{}));
-
-                    const auto k_dram_unmerged_xor = transform_tensor_view(
-                        k_dram_merged,
-                        make_tuple(make_pass_through_transform(height / XorLengthFold),
-                                   make_unmerge_transform(make_tuple(
-                                       number<LDSLayerSize / SageAttnPipeline::kAlignmentK>{},
-                                       number<SageAttnPipeline::kAlignmentK>{}))),
-                        make_tuple(sequence<0>{}, sequence<1>{}),
-                        make_tuple(sequence<0>{}, sequence<1, 2>{}));
-
-                    const auto k_dram_permuted = transform_tensor_view(
-                        k_dram_unmerged_xor,
-                        make_tuple(
-                            make_xor_transform(
-                                make_tuple(height / XorLengthFold,
-                                           number<LDSLayerSize / SageAttnPipeline::kAlignmentK>{})),
-                            make_pass_through_transform(number<SageAttnPipeline::kAlignmentK>{})),
-                        make_tuple(sequence<0, 1>{}, sequence<2>{}),
-                        make_tuple(sequence<0, 1>{}, sequence<2>{}));
-
-                    const auto k_dram_tmp = transform_tensor_view(
-                        k_dram_permuted,
-                        make_tuple(
-                            make_pass_through_transform(height / XorLengthFold),
-                            make_unmerge_transform(
-                                make_tuple(number<XorLengthFold>{},
-                                           number<SageAttnPipeline::kQKHeaddim /
-                                                  SageAttnPipeline::kAlignmentK>{})),
-                            make_pass_through_transform(number<SageAttnPipeline::kAlignmentK>{})),
-                        make_tuple(sequence<0>{}, sequence<1>{}, sequence<2>{}),
-                        make_tuple(sequence<0>{}, sequence<1, 2>{}, sequence<3>{}));
-
-                    return transform_tensor_view(
-                        k_dram_tmp,
-                        make_tuple(make_merge_transform_v3_division_mod(
-                                       make_tuple(height / XorLengthFold, number<XorLengthFold>{})),
-                                   make_merge_transform_v3_division_mod(
-                                       make_tuple(number<SageAttnPipeline::kQKHeaddim /
-                                                         SageAttnPipeline::kAlignmentK>{},
-                                                  number<SageAttnPipeline::kAlignmentK>{}))),
-                        make_tuple(sequence<0, 1>{}, sequence<2, 3>{}),
-                        make_tuple(sequence<0>{}, sequence<1>{}));
-                }
-                else
-#endif // CK_TILE_FMHA_HANDLE_XOR_LENGTH_FOLD
-                {
-                    const auto k_dram_unmerged = transform_tensor_view(
-                        k_dram_pad,
-                        make_tuple(make_pass_through_transform(height),
-                                   make_unmerge_transform(make_tuple(
-                                       number<SageAttnPipeline::kQKHeaddim / kDramTileK /
-                                              SageAttnPipeline::kAlignmentK>{},
-                                       number<kDramTileK / SageAttnPipeline::kAlignmentK>{},
-                                       number<SageAttnPipeline::kAlignmentK>{}))),
-                        make_tuple(sequence<0>{}, sequence<1>{}),
-                        make_tuple(sequence<0>{}, sequence<1, 2, 3>{}));
-
-                    const auto k_dram_permuted = transform_tensor_view(
-                        k_dram_unmerged,
-                        make_tuple(
-                            make_xor_transform(make_tuple(
-                                height, number<kDramTileK / SageAttnPipeline::kAlignmentK>{})),
-                            make_pass_through_transform(
-                                number<SageAttnPipeline::kQKHeaddim / kDramTileK /
-                                       SageAttnPipeline::kAlignmentK>{}),
-                            make_pass_through_transform(number<SageAttnPipeline::kAlignmentK>{})),
-                        make_tuple(sequence<0, 2>{}, sequence<1>{}, sequence<3>{}),
-                        make_tuple(sequence<0, 2>{}, sequence<1>{}, sequence<3>{}));
-
-                    return transform_tensor_view(
-                        k_dram_permuted,
-                        make_tuple(make_pass_through_transform(height),
-                                   make_merge_transform_v3_division_mod(make_tuple(
-                                       number<SageAttnPipeline::kQKHeaddim / kDramTileK /
-                                              SageAttnPipeline::kAlignmentK>{},
-                                       number<kDramTileK / SageAttnPipeline::kAlignmentK>{},
-                                       number<SageAttnPipeline::kAlignmentK>{}))),
-                        make_tuple(sequence<0>{}, sequence<1, 2, 3>{}),
-                        make_tuple(sequence<0>{}, sequence<1>{}));
-                }
-            };
-            const auto k_dram = [&]() {
-                {
-                    return make_k_dram(k_ptr, kargs.seqlen_k);
-                }
-            }();
-
-            const auto make_v_dram = [&](const VDataType* data, index_t length) {
+            constexpr bool kPadSeqLenK_ = kUseAsyncCopy ? kPadSeqLenK : false;
+            return pad_tensor_view(
+                k_dram_naive,
+                make_tuple(number<SageAttnPipeline::kN0>{}, number<SageAttnPipeline::kK0>{}),
+                sequence<kPadSeqLenK_, kPadHeadDimQ>{});
+        }();
+        const auto v_dram = [&]() {
+            if constexpr(std::is_same_v<VLayout, ck_tile::tensor_layout::gemm::RowMajor>)
+            {
                 const auto v_dram_naive = make_naive_tensor_view<address_space_enum::global>(
-                    data, // will update this pointer if using paged-kvcache
-                    make_tuple(length, kargs.hdim_v),
+                    v_ptr,
+                    make_tuple(kargs.seqlen_k, kargs.hdim_v),
                     make_tuple(kargs.stride_v, 1),
                     number<SageAttnPipeline::kAlignmentV>{},
                     number<1>{});
 
-                // TODO: Add kVHeadDim
-                constexpr index_t XorGroupSize =
-                    SageAttnPipeline::Problem::BlockFmhaShape::Gemm1WarpTile::at(number<0>{});
+                const auto v_dram_transposed =
+                    transform_tensor_view(v_dram_naive,
+                                          make_tuple(make_pass_through_transform(kargs.hdim_v),
+                                                     make_pass_through_transform(kargs.seqlen_k)),
+                                          make_tuple(sequence<1>{}, sequence<0>{}),
+                                          make_tuple(sequence<0>{}, sequence<1>{}));
 
-                const auto v_dram_pad = pad_tensor_view(
-                    v_dram_naive,
-                    make_tuple(number<SageAttnPipeline::kK1>{}, number<SageAttnPipeline::kN1>{}),
-                    sequence<kPadSeqLenK, false>{});
-
-#if CK_TILE_FMHA_HANDLE_XOR_LENGTH_FOLD
-                constexpr index_t LDSLayerSize  = 256 / sizeof(VDataType);
-                constexpr index_t XorLengthFold = LDSLayerSize / (SageAttnPipeline::kQKHeaddim);
-
-                if constexpr(XorLengthFold > 1)
-                {
-                    const auto v_dram_unmerged = transform_tensor_view(
-                        v_dram_pad,
-                        make_tuple(
-                            make_unmerge_transform(
-                                make_tuple(length / XorLengthFold, XorLengthFold)),
-                            make_pass_through_transform(number<SageAttnPipeline::kQKHeaddim>{})),
-                        make_tuple(sequence<0>{}, sequence<1>{}),
-                        make_tuple(sequence<0, 1>{}, sequence<2>{}));
-
-                    const auto v_dram_merged = transform_tensor_view(
-                        v_dram_unmerged,
-                        make_tuple(make_pass_through_transform(length / XorLengthFold),
-                                   make_merge_transform_v3_division_mod(make_tuple(
-                                       XorLengthFold, number<SageAttnPipeline::kQKHeaddim>{}))),
-                        make_tuple(sequence<0>{}, sequence<1, 2>{}),
-                        make_tuple(sequence<0>{}, sequence<1>{}));
-
-                    const auto v_dram_unmerged_xor = transform_tensor_view(
-                        v_dram_merged,
-                        make_tuple(
-                            make_pass_through_transform(length / XorLengthFold),
-                            make_unmerge_transform(make_tuple(number<LDSLayerSize / XorGroupSize>{},
-                                                              number<XorGroupSize>{}))),
-                        make_tuple(sequence<0>{}, sequence<1>{}),
-                        make_tuple(sequence<0>{}, sequence<1, 2>{}));
-
-                    const auto v_dram_permuted = transform_tensor_view(
-                        v_dram_unmerged_xor,
-                        make_tuple(
-                            make_xor_transform(make_tuple(length / XorLengthFold,
-                                                          number<LDSLayerSize / XorGroupSize>{})),
-                            make_pass_through_transform(number<XorGroupSize>{})),
-                        make_tuple(sequence<0, 1>{}, sequence<2>{}),
-                        make_tuple(sequence<0, 1>{}, sequence<2>{}));
-
-                    const auto v_dram_tmp = transform_tensor_view(
-                        v_dram_permuted,
-                        make_tuple(make_pass_through_transform(length / XorLengthFold),
-                                   make_unmerge_transform(make_tuple(
-                                       number<XorLengthFold>{},
-                                       number<SageAttnPipeline::kQKHeaddim / XorGroupSize>{})),
-                                   make_pass_through_transform(number<XorGroupSize>{})),
-                        make_tuple(sequence<0>{}, sequence<1>{}, sequence<2>{}),
-                        make_tuple(sequence<0>{}, sequence<1, 2>{}, sequence<3>{}));
-
-                    return transform_tensor_view(
-                        v_dram_tmp,
-                        make_tuple(make_merge_transform_v3_division_mod(
-                                       make_tuple(length / XorLengthFold, number<XorLengthFold>{})),
-                                   make_merge_transform_v3_division_mod(make_tuple(
-                                       number<SageAttnPipeline::kQKHeaddim / XorGroupSize>{},
-                                       number<XorGroupSize>{}))),
-                        make_tuple(sequence<0, 1>{}, sequence<2, 3>{}),
-                        make_tuple(sequence<0>{}, sequence<1>{}));
-                }
-                else
-#endif // CK_TILE_FMHA_HANDLE_XOR_LENGTH_FOLD
-                {
-                    const auto v_dram_unmerged = transform_tensor_view(
-                        v_dram_pad,
-                        make_tuple(make_pass_through_transform(length),
-                                   make_unmerge_transform(make_tuple(
-                                       number<SageAttnPipeline::kQKHeaddim / XorGroupSize>{},
-                                       number<XorGroupSize>{}))),
-                        make_tuple(sequence<0>{}, sequence<1>{}),
-                        make_tuple(sequence<0>{}, sequence<1, 2>{}));
-
-                    const auto v_dram_permuted = transform_tensor_view(
-                        v_dram_unmerged,
-                        make_tuple(
-                            make_xor_transform(make_tuple(
-                                length, number<SageAttnPipeline::kQKHeaddim / XorGroupSize>{})),
-                            make_pass_through_transform(number<XorGroupSize>{})),
-                        make_tuple(sequence<0, 1>{}, sequence<2>{}),
-                        make_tuple(sequence<0, 1>{}, sequence<2>{}));
-
-                    return transform_tensor_view(
-                        v_dram_permuted,
-                        make_tuple(make_pass_through_transform(length),
-                                   make_merge_transform_v3_division_mod(make_tuple(
-                                       number<SageAttnPipeline::kQKHeaddim / XorGroupSize>{},
-                                       number<XorGroupSize>{}))),
-                        make_tuple(sequence<0>{}, sequence<1, 2>{}),
-                        make_tuple(sequence<0>{}, sequence<1>{}));
-                }
-            };
-
-            const auto v_dram = [&]() {
-                {
-                    return make_v_dram(v_ptr, kargs.seqlen_k);
-                }
-            }();
-
-            auto q_dram_window = make_tile_window(
-                q_dram,
-                [&]() {
-                    if constexpr(SageAttnPipeline::kQLoadOnce)
-                        return make_tuple(number<SageAttnPipeline::kM0>{},
-                                          number<SageAttnPipeline::kSubQKHeaddim>{});
-                    else
-                        return make_tuple(number<SageAttnPipeline::kM0>{},
-                                          number<SageAttnPipeline::kK0>{});
-                }(),
-                {i_m0, 0});
-
-            auto k_dram_window = make_tile_window(
-                k_dram,
-                make_tuple(number<SageAttnPipeline::kN0>{}, number<SageAttnPipeline::kK0>{}),
-                {0, 0});
-
-            auto v_dram_window = make_tile_window(
-                v_dram,
-                make_tuple(number<SageAttnPipeline::kN1>{}, number<SageAttnPipeline::kK1>{}),
-                {0, 0});
-
-            /// FIXME: Before C++20, capturing structured binding variables are not supported.
-            /// Remove following copy capture of the 'i_nhead' if in C++20
-
-            FmhaMask mask = [&]() {
-                if constexpr(kHasMask)
-                    return ck_tile::make_generic_attention_mask_from_lr_window<FmhaMask>(
-                        kargs.window_size_left,
-                        kargs.window_size_right,
-                        0,
-                        kargs.seqlen_q,
-                        kargs.seqlen_k,
-                        kargs.mask_type == GenericAttentionMaskEnum::MASK_FROM_TOP_LEFT);
-                else
-                    return FmhaMask{kargs.seqlen_q, kargs.seqlen_k};
-            }();
-
-            // WA i_batch capture structure binding before c++20
-            auto position_encoding = EmptyPositionEncoding<SaccDataType>{};
-
-            auto o_acc_tile = [&]() {
-                if constexpr(PrefillCase)
-                {
-                    // allocate double lds
-                    // add __restrict__ here to avoid aliasing
-                    __shared__ char smem_ptrk0[SageAttnPipeline::Policy::template GetSmemSizeK<
-                        typename SageAttnPipeline::Problem,
-                        true>()];
-                    __shared__ char smem_ptrk1[SageAttnPipeline::Policy::template GetSmemSizeK<
-                        typename SageAttnPipeline::Problem,
-                        true>()];
-                    __shared__ char smem_ptrv0[SageAttnPipeline::Policy::template GetSmemSizeV<
-                        typename SageAttnPipeline::Problem>()];
-                    __shared__ char smem_ptrv1[SageAttnPipeline::Policy::template GetSmemSizeV<
-                        typename SageAttnPipeline::Problem>()];
-
-                    return SageAttnPipeline{}(q_dram_window,
-                                              k_dram_window,
-                                              v_dram_window,
-                                              mask,
-                                              position_encoding,
-                                              kargs.scale_s,
-                                              smem_ptrk0,
-                                              smem_ptrk1,
-                                              smem_ptrv0,
-                                              smem_ptrv1);
-                }
-                else
-                {
-                    __shared__ char smem_ptr[GetSmemSize()];
-                    return SageAttnPipeline{}(q_dram_window,
-                                              k_dram_window,
-                                              v_dram_window,
-                                              mask,
-                                              position_encoding,
-                                              kargs.scale_s,
-                                              smem_ptr);
-                }
-            }();
-
-            // Oacc DRAM and Oacc DRAM window
-            auto o_dram = [&] {
-                const auto o_dram_naive = [&] {
-                    {
-                        return make_naive_tensor_view<address_space_enum::global>(
-                            o_ptr,
-                            make_tuple(kargs.seqlen_q, kargs.hdim_v),
-                            make_tuple(kargs.stride_o, 1),
-                            number<SageAttnPipeline::kAlignmentOacc>{},
-                            number<1>{});
-                    }
-                }();
-
+                constexpr bool kPadSeqLenK_ = kUseAsyncCopy ? kPadSeqLenK : false;
                 return pad_tensor_view(
-                    o_dram_naive,
-                    make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kN1>{}),
-                    sequence<kPadSeqLenQ, kPadHeadDimV>{});
+                    v_dram_transposed,
+                    make_tuple(number<SageAttnPipeline::kN1>{}, number<SageAttnPipeline::kK1>{}),
+                    sequence<kPadHeadDimV, kPadSeqLenK_>{});
+            }
+            else
+            {
+                const auto v_dram_naive = make_naive_tensor_view<address_space_enum::global>(
+                    v_ptr,
+                    make_tuple(kargs.hdim_v, kargs.seqlen_k),
+                    make_tuple(kargs.stride_v, 1),
+                    number<SageAttnPipeline::kAlignmentV>{},
+                    number<1>{});
+
+                constexpr bool kPadHeadDimV_ = kUseAsyncCopy ? kPadHeadDimV : false;
+                return pad_tensor_view(
+                    v_dram_naive,
+                    make_tuple(number<SageAttnPipeline::kN1>{}, number<SageAttnPipeline::kK1>{}),
+                    sequence<kPadHeadDimV_, kPadSeqLenK>{});
+            }
+        }();
+
+        auto q_dram_window =
+            make_tile_window(q_dram,
+                             [&]() {
+                                 if constexpr(SageAttnPipeline::kQLoadOnce)
+                                     return make_tuple(number<SageAttnPipeline::kM0>{},
+                                                       number<SageAttnPipeline::kSubQKHeaddim>{});
+                                 else
+                                     return make_tuple(number<SageAttnPipeline::kM0>{},
+                                                       number<SageAttnPipeline::kK0>{});
+                             }(),
+                             {i_m0, 0});
+
+        auto k_dram_window = make_tile_window(
+            k_dram,
+            make_tuple(number<SageAttnPipeline::kN0>{}, number<SageAttnPipeline::kK0>{}),
+            {0, 0});
+
+        auto v_dram_window = make_tile_window(
+            v_dram,
+            make_tuple(number<SageAttnPipeline::kN1>{}, number<SageAttnPipeline::kK1>{}),
+            {i_n1, 0});
+        /// FIXME: Before C++20, capturing structured binding variables are not supported.
+        /// Remove following copy capture of the 'i_nhead' if in C++20
+
+        FmhaMask mask = [&]() {
+            if constexpr(kHasMask)
+                return ck_tile::make_generic_attention_mask_from_lr_window<FmhaMask>(
+                    kargs.window_size_left,
+                    kargs.window_size_right,
+                    0,
+                    kargs.seqlen_q,
+                    kargs.seqlen_k,
+                    kargs.mask_type == GenericAttentionMaskEnum::MASK_FROM_TOP_LEFT);
+            else
+                return FmhaMask{kargs.seqlen_q, kargs.seqlen_k};
+        }();
+
+        // WA i_batch capture structure binding before c++20
+        auto position_encoding = EmptyPositionEncoding<SaccDataType>{};
+
+        AttentionVariant variant;
+        const auto variant_params = [&] {
+            const float scale_s = [&] {
+                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
+                {
+                    float q_descale = *(reinterpret_cast<const float*>(kargs.q_descale_ptr));
+                    float k_descale = *(reinterpret_cast<const float*>(kargs.k_descale_ptr));
+
+                    return kargs.scale_s * q_descale * k_descale;
+                }
+                else
+                {
+                    return kargs.scale_s;
+                }
             }();
 
-            auto o_dram_window = make_tile_window(
-                o_dram,
-                make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kN1>{}),
-                {i_m0, i_n1});
+            // logits_soft_cap is always disabled, use standard attention params
+            return ck_tile::StandardAttentionParams<FmhaMask>{mask, scale_s};
+        }();
 
-            EpiloguePipeline{}(o_dram_window, o_acc_tile, nullptr);
-        }
+        BlockIndices block_indices{i_batch, i_nhead, i_nhead / kargs.nhead_ratio_qk};
+        auto o_acc_tile = [&]() {
+            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
+            {
+                // TODO - move global load of descale to pipeline
+                float v_descale = *(reinterpret_cast<const float*>(kargs.v_descale_ptr));
+
+                float scale_p = ck_tile::type_convert<float>(ck_tile::numeric<PDataType>::max());
+                float scale_o = v_descale / scale_p;
+
+                auto o_acc_element_func = [&]() {
+                    if constexpr(std::is_same_v<ODataType, ck_tile::fp8_t>)
+                        return make_composes(
+                            ck_tile::saturates<ck_tile::fp8_t>{},
+                            ck_tile::scales<remove_cvref_t<decltype(scale_o)>>{scale_o});
+                    else
+                        return ck_tile::scales<remove_cvref_t<decltype(scale_o)>>{scale_o};
+                }();
+                return SageAttnPipeline{}(
+                    q_dram_window,
+                    identity{}, // q_element_func
+                    k_dram_window,
+                    identity{}, // k_element_func
+                    v_dram_window,
+                    identity{},                                         // v_element_func
+                    identity{},                                         // s_acc_element_func
+                    scales<remove_cvref_t<decltype(scale_p)>>{scale_p}, // p_compute_element_func
+                    o_acc_element_func,                                 // o_acc_element_func
+                    mask,
+                    position_encoding,
+                    variant_params.sm_scale,
+                    variant,
+                    variant_params,
+                    block_indices,
+                    smem_ptr);
+            }
+            else if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
+            {
+                const float* q_descale_ptr =
+                    reinterpret_cast<const float*>(kargs.q_descale_ptr) +
+                    static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q_descale +
+                    batch_offset_q_descale;
+                const float* k_descale_ptr =
+                    reinterpret_cast<const float*>(kargs.k_descale_ptr) +
+                    static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
+                        kargs.nhead_stride_k_descale +
+                    batch_offset_k_descale;
+                const float* v_descale_ptr =
+                    reinterpret_cast<const float*>(kargs.v_descale_ptr) +
+                    static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
+                        kargs.nhead_stride_v_descale +
+                    batch_offset_v_descale;
+
+                // BLOCKSCALE: one q_descale per tile (block_scale_size_q=128)
+                size_t idx      = i_m0 / kargs.block_scale_size_q;
+                float q_descale = q_descale_ptr[idx];
+
+                return SageAttnPipeline{}(
+                    q_dram_window,
+                    identity{}, // q_element_func
+                    k_dram_window,
+                    identity{}, // k_element_func
+                    v_dram_window,
+                    identity{},               // v_element_func
+                    scales<float>(q_descale), // s_acc_element_func
+                    identity{},               // p_compute_element_func - No scaling (done in exp2)
+                    identity{}, // o_acc_element_func - No dequant (canceled by rowsum)
+                    mask,
+                    position_encoding,
+                    kargs.scale_s,
+                    variant,
+                    variant_params,
+                    block_indices,
+                    smem_ptr,
+                    nullptr,
+                    k_descale_ptr,
+                    v_descale_ptr,
+                    0,
+                    kargs.block_scale_size_kv);
+            }
+            else if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+            {
+                const float* q_descale_ptr =
+                    reinterpret_cast<const float*>(kargs.q_descale_ptr) +
+                    static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q_descale +
+                    batch_offset_q_descale;
+                const float* k_descale_ptr =
+                    reinterpret_cast<const float*>(kargs.k_descale_ptr) +
+                    static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
+                        kargs.nhead_stride_k_descale +
+                    batch_offset_k_descale;
+                const float* v_descale_ptr =
+                    reinterpret_cast<const float*>(kargs.v_descale_ptr) +
+                    static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
+                        kargs.nhead_stride_v_descale +
+                    batch_offset_v_descale;
+
+                // PERWARP: one q_descale per warp (block_scale_size_q=32)
+                // Each tile has kM0 rows (e.g., 128), divided into kM0/32 = 4 groups
+                // Each wave within a block processes different rows
+                constexpr index_t wave_size = 64; // AMD GPU wave size
+                const index_t wave_id = __builtin_amdgcn_readfirstlane(threadIdx.x / wave_size);
+
+                const size_t tile_base_idx = i_m0 / kargs.block_scale_size_q;
+                const size_t idx           = tile_base_idx + wave_id;
+                const float q_descale      = q_descale_ptr[idx];
+
+                return SageAttnPipeline{}(
+                    q_dram_window,
+                    identity{}, // q_element_func
+                    k_dram_window,
+                    identity{}, // k_element_func
+                    v_dram_window,
+                    identity{},               // v_element_func
+                    scales<float>(q_descale), // s_acc_element_func - per-warp q_descale
+                    identity{},               // p_compute_element_func - No scaling (done in exp2)
+                    identity{}, // o_acc_element_func - No dequant (canceled by rowsum)
+                    mask,
+                    position_encoding,
+                    kargs.scale_s,
+                    variant,
+                    variant_params,
+                    block_indices,
+                    smem_ptr,
+                    nullptr,
+                    k_descale_ptr,
+                    v_descale_ptr,
+                    0,
+                    kargs.block_scale_size_kv);
+            }
+            else
+            {
+                return SageAttnPipeline{}(q_dram_window,
+                                          k_dram_window,
+                                          v_dram_window,
+                                          mask,
+                                          position_encoding,
+                                          variant_params.sm_scale,
+                                          variant,
+                                          variant_params,
+                                          block_indices,
+                                          smem_ptr);
+            }
+        }();
+
+        // O DRAM and O DRAM window
+        auto o_dram = [&]() {
+            const auto o_dram_naive = make_naive_tensor_view<address_space_enum::global>(
+                o_ptr,
+                make_tuple(kargs.seqlen_q, kargs.hdim_v),
+                make_tuple(kargs.stride_o, 1),
+                number<SageAttnPipeline::kAlignmentO>{},
+                number<1>{});
+
+            return pad_tensor_view(
+                o_dram_naive,
+                make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kN1>{}),
+                sequence<kPadSeqLenQ, kPadHeadDimV>{});
+        }();
+
+        auto o_dram_window = make_tile_window(
+            o_dram,
+            make_tuple(number<SageAttnPipeline::kM0>{}, number<SageAttnPipeline::kN1>{}),
+            {i_m0, i_n1});
+
+        EpiloguePipeline{}(o_dram_window, o_acc_tile, nullptr);
     }
 };
 

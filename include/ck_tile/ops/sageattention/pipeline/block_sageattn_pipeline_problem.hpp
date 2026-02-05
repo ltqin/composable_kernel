@@ -22,7 +22,6 @@ template <typename QDataType_,
           bool kIsGroupMode_,
           typename AttentionVariant_,
           typename FmhaMask_,
-          bool kUseTrLoad_,
           typename Traits_>
 struct BlockSageAttnPipelineProblem
 {
@@ -45,7 +44,6 @@ struct BlockSageAttnPipelineProblem
     static constexpr index_t kBlockSize     = BlockSageAttnShape::NumWarps * get_warp_size();
 
     static constexpr bool kIsGroupMode = kIsGroupMode_;
-    static constexpr bool kUseTrLoad   = kUseTrLoad_;
 
     // attributes from traits
     static constexpr bool kPadSeqLenQ     = Traits::kPadSeqLenQ;

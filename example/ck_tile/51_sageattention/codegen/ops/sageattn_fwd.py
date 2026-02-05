@@ -100,7 +100,6 @@ using fmha_pipeline_problem = ck_tile::BlockSageAttnPipelineProblem<
     {F_mode},
     fmha_variant,
     fmha_mask,
-    {F_trload},
     fmha_traits>;
 
 using fmha_pipeline = {F_pipeline}<
@@ -115,7 +114,7 @@ using fmha_kernel = {F_kernel}<fmha_pipeline, fmha_epilogue>;
 
 
 using trait = sageattn_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode},{F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout},
-                        {F_pipeline_enum}, fmha_mask, ck_tile::BlockAttentionBiasEnum::NO_BIAS, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}>;
+                        {F_pipeline_enum}, fmha_mask, ck_tile::BlockAttentionBiasEnum::NO_BIAS, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_skip}>;
 
 template<>
 float sageattn_fwd_<trait, {F_arch.tag}>(const ck_tile::stream_config& s, sageattn_fwd_args a)
@@ -218,7 +217,7 @@ SAGEATTN_FWD_API_PER_HDIM_CASE = """{F_if}(t.hdim_q <= {F_hdim} && t.hdim_v <= {
 
 SAGEATTN_FWD_API_INNER_DISPATCH = """{F_if}((t.is_group_mode == {F_mode}) && (t.is_v_rowmajor == {F_vlayout}) && ({F_mask_check}) && (t.qscale_type == {F_qscale_check}) && (t.skip_min_seqlen_q == {F_skip}) &&
         ({F_scheck}) && ({F_seqtune}) && ({F_skcheck}) && ({F_dcheck}) && ({F_dvcheck}) && ({F_constraint})) {{
-    using trait_ = sageattn_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode}, {F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout}, {F_pipeline_enum}, {F_mask}, ck_tile::BlockAttentionBiasEnum::NO_BIAS, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_trload}, {F_skip}>;
+    using trait_ = sageattn_fwd_traits_<{F_hdim}, {F_dtype}, {F_mode}, {F_bm0}, {F_bn0}, {F_bk0}, {F_bn1}, {F_bk1}, {F_bk0max}, {F_vlayout}, {F_pipeline_enum}, {F_mask}, ck_tile::BlockAttentionBiasEnum::NO_BIAS, {F_qscale}, {F_spad}, {F_skpad}, {F_dpad}, {F_dvpad}, {F_skip}>;
     return sageattn_fwd_<trait_, {F_arch.tag}>(s, a);
 }}
 """
@@ -260,7 +259,6 @@ class SageAttnFwdApiTrait:
     dpad: str
     dvpad: str
     skip: str
-    tr_load: str
     constraint: CppConstraint
 
     @property
@@ -357,7 +355,6 @@ class SageAttnFwdPipeline:
     F_qscale: str  # no/pertensor
     F_mask: str  # value from MASK_MAP
     F_skip: str  # true/false
-    F_trload: str  # true/false
     F_constraint: CppConstraint = field(default_factory=lambda: CppConstraint())
 
     @property
@@ -405,11 +402,6 @@ class SageAttnFwdPipeline:
             n += f"_{self.F_qscale}"
         else:
             n += "_nqscale"
-
-        if self.F_trload == "t":
-            n += "_trload"
-        else:
-            n += "_ntrload"
 
         return n
 
@@ -493,7 +485,6 @@ class SageAttnFwdApiPool:
                             F_mask=get_mask_cpp_type(trait.mask),
                             F_mask_check=get_mask_cpp_check_expr(trait.mask),
                             F_skip=BOOL_MAP[trait.skip],
-                            F_trload=BOOL_MAP[trait.tr_load],
                             F_qscale_check=QSCALE_CHECK_MAP[trait.qscale],
                             F_qscale=QSCALE_MAP[trait.qscale],
                             F_scheck=trait.scheck,
@@ -622,7 +613,6 @@ class SageAttnFwdKernel:
             F_pipeline_enum=PIPELINE_ENUM_MAP[self.F_pipeline.tag],
             F_mask=get_mask_cpp_type(self.F_pipeline.F_mask),
             F_mode=MODE_MAP[self.F_mode],
-            F_trload=BOOL_MAP[self.F_pipeline.F_trload],
             F_pipeline=PIPELINE_MAP[self.F_pipeline.tag],
             F_kernel=self._get_cpp_kernel_class_name(self.F_pipeline.tag),
             F_kargs_creator=self._get_cpp_kargs_creator_func_name(self.F_pipeline.tag),
@@ -663,7 +653,6 @@ class SageAttnFwdKernel:
             dpad=self.F_pipeline.F_dpad,
             dvpad=self.F_pipeline.F_dvpad,
             skip=self.F_pipeline.F_skip,
-            tr_load=self.F_pipeline.F_trload,
             constraint=self.F_tile.F_constraint & self.F_pipeline.F_constraint,
         )
 
@@ -821,13 +810,13 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
                 ["row", "col"],
             ):
                 if hdim == 256 and hdim_v == 256:
-                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", qscale, mask, skip))  # fmt: skip
                     # the below two is used for hdim vectorize load
-                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "f", "f", qscale, mask, skip, "f"))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "f", "f", qscale, mask, skip))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip))  # fmt: skip
                 else:
-                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "f", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "t", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "f", "t", "t", qscale, mask, skip))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "t", "t", "t", qscale, mask, skip))  # fmt: skip
         elif dtype in cls._DT_FP8BF16 or dtype in cls._DT_I8FP8BF16:
             # no need lse kernels
             skip = "f"  # skip: only false
@@ -837,11 +826,11 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
                 ["row", "col"],  # Support both row and col major layouts
             ):
                 if hdim == 64:
-                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "f", "f", "f", qscale, mask, skip, "f"))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "f", "f", qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "f", "f", "f", qscale, mask, skip))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "f", "f", qscale, mask, skip))  # fmt: skip
                 else:
-                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "f", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
-                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "t", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "f", "t", "t", qscale, mask, skip))  # fmt: skip
+                    pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "t", "t", "t", qscale, mask, skip))  # fmt: skip
         elif dtype in ["fp8", "fp8fp16", "bf8"]:
             # TODO
             pass
@@ -899,8 +888,8 @@ class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
                 get_mask_map(mask_impl).keys(),
                 ["row", "col"],  # Support both row and col major layouts
             ):
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", qscale, mask, skip, "f"))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", qscale, mask, skip))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip))  # fmt: skip
         elif dtype in cls._DT_FP8_FP8BF16 or dtype in cls._DT_I8FP8BF16:
             # no need lse kernels
             skip = "f"  # skip: only false
@@ -909,8 +898,8 @@ class KernelComponentFactoryGfx12(CompatibilityRuleFactory):
                 ["no", "pertensor", "blockscale", "perwarp"],
                 ["row", "col"],  # Support both row and col major layouts
             ):
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", qscale, mask, skip, "f"))  # fmt: skip
-                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip, "f"))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "f", "f", "f", "f", qscale, mask, skip))  # fmt: skip
+                pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "t", "t", qscale, mask, skip))  # fmt: skip
         return pipelines
 
 
