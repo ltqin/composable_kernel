@@ -344,11 +344,7 @@ struct SageAttnFwdKernel
                      hdim_v,
                      num_head_q,
                      nhead_ratio_qk,
-#if CK_TILE_FMHA_FWD_FAST_EXP2
                      static_cast<float>(scale_s * ck_tile::log2e_v<>),
-#else
-                     scale_s,
-#endif
                      stride_q,
                      stride_k,
                      stride_v,
@@ -628,11 +624,7 @@ struct SageAttnFwdKernel
                      hdim_v,
                      num_head_q,
                      nhead_ratio_qk,
-#if CK_TILE_FMHA_FWD_FAST_EXP2
                      static_cast<float>(scale_s * ck_tile::log2e_v<>),
-#else
-                     scale_s,
-#endif
                      stride_q,
                      stride_k,
                      stride_v,

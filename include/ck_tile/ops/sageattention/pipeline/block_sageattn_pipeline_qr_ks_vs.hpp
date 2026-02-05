@@ -378,9 +378,6 @@ struct BlockSageAttentionPipelineQRKSVS
 
             // STAGE 2, scale_s, mask, softmax
             s_acc = tile_elementwise_in(s_acc_element_func_, s_acc);
-#if !CK_TILE_FMHA_FWD_FAST_EXP2
-            tile_elementwise_inout([&scale_s](auto& x) { x = x * scale_s; }, s_acc);
-#endif
             if constexpr(kPadSeqLenK || FmhaMask::IsMasking)
             {
                 const auto k_origin      = k_dram_block_window.get_window_origin();
@@ -443,7 +440,6 @@ struct BlockSageAttentionPipelineQRKSVS
             constexpr auto p_spans = decltype(p_compute)::get_distributed_spans();
             sweep_tile_span(p_spans[number<0>{}], [&](auto idx0) {
                 constexpr auto i_idx = make_tuple(idx0);
-#if CK_TILE_FMHA_FWD_FAST_EXP2
                 // For BLOCKSCALE: precompute (m - shift) once per row
                 // Bias/Alibi: exp2(s - m + shift) = exp2(s - (m - shift))
                 // else: exp2(scale_s*s - scale_s*m + shift) = exp2(scale_s*s - (scale_s*m - shift))
@@ -460,14 +456,9 @@ struct BlockSageAttentionPipelineQRKSVS
                     row_max -= FNUZ_FP8_SHIFT;
 #endif
                 }
-#endif
                 sweep_tile_span(p_spans[number<1>{}], [&](auto idx1) {
                     constexpr auto i_j_idx = make_tuple(idx0, idx1);
-#if CK_TILE_FMHA_FWD_FAST_EXP2
-                    p_compute(i_j_idx) = exp2(scale_s * s[i_j_idx] - row_max);
-#else
-                    p_compute(i_j_idx) = exp(s[i_j_idx] - get_validated_m(m[i_idx]));
-#endif
+                    p_compute(i_j_idx)     = exp2(scale_s * s[i_j_idx] - row_max);
                 });
             });
 
@@ -486,12 +477,8 @@ struct BlockSageAttentionPipelineQRKSVS
 
                 if(max_changed)
                 {
-#if CK_TILE_FMHA_FWD_FAST_EXP2
                     auto row_max   = scale_s * m_new;
                     const auto tmp = exp2(scale_s * m_old[i_idx] - row_max);
-#else
-                    const auto tmp = exp(m_old[i_idx] - m_new);
-#endif
                     // Rescale l and o_acc
                     l(i_idx) *= tmp;
                     sweep_tile_span(o_spans[number<1>{}], [&](auto idx1) {
