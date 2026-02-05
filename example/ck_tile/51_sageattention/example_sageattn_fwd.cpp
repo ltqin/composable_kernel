@@ -10,7 +10,7 @@
 auto create_args(int argc, char* argv[])
 {
     ck_tile::ArgParser arg_parser;
-    arg_parser.insert("v", "1", "0:no validation, 2:cpu validation, 2:gpu validation(experimental)")
+    arg_parser.insert("v", "1", "0:no validation, 1:cpu validation")
         .insert("mode", "0", "kernel mode. 0:batch, 1:group")
         .insert("b", "2", "batch size")
         .insert("h", "8", "num of head, for q")
