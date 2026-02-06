@@ -559,28 +559,9 @@ struct BlockSageAttentionPipelineQRKSVSAsync
 #endif
             }();
 
-            float v_descale = 1.0f;
-            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
-            {
-                // K and V share the same seqlen_k position within a block
-                const index_t kv_idx = (seqlen_k_start + i_total_loops * kN0) / block_scale_size_kv;
-                v_descale            = v_descale_ptr[kv_idx];
-            }
             // STAGE 3, KV gemm
-            // For BLOCKSCALE mode, use temporary accumulator to apply v_descale
-            // For PERWARP mode, accumulate directly to o_acc (apply v_descale later per-channel)
-            auto o_acc_tmp = decltype(o_acc){};
-            if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
-            {
-                clear_tile(o_acc_tmp);
-            }
-            auto& o_acc_ = [&]() -> auto& {
-                if constexpr(Problem::QScaleEnum ==
-                             ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
-                    return o_acc_tmp;
-                else
-                    return o_acc;
-            }();
+            // For both BLOCKSCALE and PERWARP modes, accumulate directly to o_acc
+            // Apply per-channel v_descale after the loop (before normalization)
 
             if constexpr(k1_loops > 1)
             {
@@ -591,7 +572,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                             v_dram_window, number<-1>{}, bool_constant<false>{}); // load next v_buf
                     }
                     block_sync_lds();
-                    gemm_1(o_acc_,
+                    gemm_1(o_acc,
                            get_slice_tile(
                                p, sequence<0, i_k1 * kK1>{}, sequence<kM0, (i_k1 + 1) * kK1>{}),
                            get_slice_tile(
@@ -646,7 +627,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
             {
                 block_sync_lds();
                 gemm_1(
-                    o_acc_,
+                    o_acc,
                     get_slice_tile(p, sequence<0, (k1_loops - 1) * kK1>{}, sequence<kM0, kN0>{}),
                     get_slice_tile(
                         v_lds_window,
@@ -654,24 +635,16 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                         sequence<(LdsSeq.at(number<k0_loops + k1_loops - 1>{}) + 1) * kN1, kK1>{}));
             }
 
-            // Apply v_descale for BLOCKSCALE mode only
-            // PERWARP mode will apply per-channel v_descale after the loop
-            if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE)
-            {
-                // P scaling is done in exp2(x+shift), both P and rowsum scaled by 2^shift
-                // They cancel in normalization, so just apply v_descale directly
-                tile_elementwise_inout(
-                    [&](auto& y, const auto& x) { y += x * v_descale; }, o_acc, o_acc_tmp);
-            }
         } while(i_total_loops < num_total_loop);
 
-        // Apply per-channel v_descale for PERWARP mode (after loop, before normalization)
-        if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::PERWARP)
+        // Apply per-channel v_descale for both BLOCKSCALE and PERWARP modes (after loop, before
+        // normalization)
+        if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE ||
+                     Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::PERWARP)
         {
             // V is col-major, each column (channel) has its own scale
             // o_acc shape: [M0, N1] where N1 is hdim_v
             // v_descale_ptr points to per-channel scales [hdim_v]
-
             // Load v_descale to LDS for better memory access pattern
             // Reuse K/V LDS space (they're no longer needed)
             auto v_descale_lds = reinterpret_cast<float*>(smem_ptr);

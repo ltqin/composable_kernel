@@ -1014,7 +1014,10 @@ struct SageAttnFwdKernel
                 const long_index_t bkey_start   = kargs.block_scale_seqstart_k_ptr[i_batch];
                 batch_offset_q_descale          = bquery_start;
                 batch_offset_k_descale          = bkey_start;
-                batch_offset_v_descale = (QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+                // Both BLOCKSCALE and PERWARP V use per-channel scale: batch_stride = nhead_k *
+                // hdim_v
+                batch_offset_v_descale = (QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP ||
+                                          QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
                                              ? i_batch * kargs.batch_stride_v_descale
                                              : bkey_start;
             }
