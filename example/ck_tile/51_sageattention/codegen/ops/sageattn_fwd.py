@@ -352,7 +352,7 @@ class SageAttnFwdPipeline:
     F_skpad: str  #
     F_dpad: str  #
     F_dvpad: str  #
-    F_qscale: str  # no/pertensor
+    F_qscale: str  # no/pertensor/blockscale/perwarp/perthread
     F_mask: str  # value from MASK_MAP
     F_skip: str  # true/false
     F_constraint: CppConstraint = field(default_factory=lambda: CppConstraint())
@@ -822,7 +822,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
             skip = "f"  # skip: only false
             for mask, qscale, vlayout in itertools.product(
                 get_mask_map(mask_impl).keys(),
-                ["no", "pertensor", "blockscale", "perwarp"],
+                ["no", "pertensor", "blockscale", "perwarp", "perthread"],
                 ["row", "col"],  # Support both row and col major layouts
             ):
                 if hdim == 64:

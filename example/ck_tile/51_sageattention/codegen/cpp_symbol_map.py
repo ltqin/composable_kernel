@@ -75,10 +75,11 @@ def get_mask_cpp_check_expr(mask: str) -> str:
 
 
 QSCALE_MAP = {
-    "no": "ck_tile::BlockAttentionQuantScaleEnum::NO_SCALE",
-    "pertensor": "ck_tile::BlockAttentionQuantScaleEnum::PERTENSOR",
-    "blockscale": "ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE",
-    "perwarp": "ck_tile::BlockAttentionQuantScaleEnum::PERWARP",
+    "no": "ck_tile::BlockSageAttentionQuantScaleEnum::NO_SCALE",
+    "pertensor": "ck_tile::BlockSageAttentionQuantScaleEnum::PERTENSOR",
+    "blockscale": "ck_tile::BlockSageAttentionQuantScaleEnum::BLOCKSCALE",
+    "perwarp": "ck_tile::BlockSageAttentionQuantScaleEnum::PERWARP",
+    "perthread": "ck_tile::BlockSageAttentionQuantScaleEnum::PERTHREAD",
 }
 
 QSCALE_CHECK_MAP = {
@@ -86,6 +87,7 @@ QSCALE_CHECK_MAP = {
     "pertensor": "quant_scale_enum::pertensor",
     "blockscale": "quant_scale_enum::blockscale",
     "perwarp": "quant_scale_enum::perwarp",
+    "perthread": "quant_scale_enum::perthread",
 }
 
 BIAS_MAP = {

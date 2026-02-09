@@ -6,7 +6,7 @@
 #include "ck_tile/core.hpp"
 #include "ck_tile/ops/fmha/block/block_attention_bias_enum.hpp"
 #include "ck_tile/ops/fmha/block/block_attention_kvcache_layout_enum.hpp"
-#include "ck_tile/ops/fmha/block/block_attention_quant_scale_enum.hpp"
+#include "ck_tile/ops/sageattention/block/block_sageattention_quant_scale_enum.hpp"
 #include "ck_tile/ops/fmha/block/block_rotary_embedding.hpp"
 
 namespace ck_tile {
@@ -17,7 +17,7 @@ template <bool kPadSeqLenQ_ /* padding for seqlen_q */,
           bool kPadHeadDimV_ /* paddding for hdim_v */,
           BlockAttentionBiasEnum BiasEnum_,
           bool kHasBiasGrad_,
-          BlockAttentionQuantScaleEnum QScaleEnum_,
+          BlockSageAttentionQuantScaleEnum QScaleEnum_,
           index_t kBlockPerCu_  = -1, /* overwrite occupancy if not -1 */
           bool kSkipMinSeqlenQ_ = false /* skip min seqlen q while chunked prefill */>
 struct TileSageAttnTraits

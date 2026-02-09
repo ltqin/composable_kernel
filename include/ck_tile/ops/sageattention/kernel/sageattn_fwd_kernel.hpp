@@ -5,7 +5,7 @@
 
 #include "ck_tile/core.hpp"
 #include "ck_tile/ops/common.hpp"
-#include "ck_tile/ops/fmha/block/block_attention_quant_scale_enum.hpp"
+#include "ck_tile/ops/sageattention/block/block_sageattention_quant_scale_enum.hpp"
 #include "ck_tile/ops/fmha/block/block_masking.hpp"
 #include "ck_tile/ops/fmha/block/block_position_encoding.hpp"
 #include "ck_tile/ops/fmha/block/variants.hpp"
@@ -118,7 +118,7 @@ struct SageAttnFwdKernel
             "_nbias" +
             (kHasMask ? "_mask" : "_nmask") +
             (kSkipMinSeqlenQ ? "_skip" : "_nskip") +
-            (QScaleEnum == BlockAttentionQuantScaleEnum::NO_SCALE ? "_nqscale" : "_pertensor");
+            (QScaleEnum == BlockSageAttentionQuantScaleEnum::NO_SCALE ? "_nqscale" : "_pertensor");
         
         #undef _SS_
         #undef _TS_
@@ -230,10 +230,11 @@ struct SageAttnFwdKernel
           SageAttnFwdEmptyKargs<0>,
           std::conditional_t<kHasMask, SageAttnFwdMaskKargs, SageAttnFwdEmptyKargs<1>>,
           std::conditional_t<
-              QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
+              QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTENSOR,
               SageAttnFwdCommonQScaleKargs,
-              std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                                     QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP,
+              std::conditional_t<QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                                     QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP ||
+                                     QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD,
                                  SageAttnFwdBatchBlockScaleKargs,
                                  SageAttnFwdEmptyKargs<2>>>
     {
@@ -253,10 +254,11 @@ struct SageAttnFwdKernel
           SageAttnFwdEmptyKargs<0>,
           std::conditional_t<kHasMask, SageAttnFwdMaskKargs, SageAttnFwdEmptyKargs<1>>,
           std::conditional_t<
-              QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR,
+              QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTENSOR,
               SageAttnFwdCommonQScaleKargs,
-              std::conditional_t<QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                                     QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP,
+              std::conditional_t<QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                                     QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP ||
+                                     QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD,
                                  SageAttnFwdGroupBlockScaleKargs,
                                  SageAttnFwdEmptyKargs<2>>>,
           std::conditional_t<kSkipMinSeqlenQ,
@@ -362,14 +364,15 @@ struct SageAttnFwdKernel
             kargs.window_size_right = window_size_right;
             kargs.mask_type         = static_cast<ck_tile::GenericAttentionMaskEnum>(mask_type);
         }
-        if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
+        if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTENSOR)
         {
             kargs.q_descale_ptr = q_descale_ptr;
             kargs.k_descale_ptr = k_descale_ptr;
             kargs.v_descale_ptr = v_descale_ptr;
         }
-        if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                     QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+        if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                     QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP ||
+                     QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
         {
             kargs.q_descale_ptr = q_descale_ptr;
             kargs.k_descale_ptr = k_descale_ptr;
@@ -644,14 +647,15 @@ struct SageAttnFwdKernel
             kargs.window_size_right = window_size_right;
             kargs.mask_type         = static_cast<ck_tile::GenericAttentionMaskEnum>(mask_type);
         }
-        if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
+        if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTENSOR)
         {
             kargs.q_descale_ptr = q_descale_ptr;
             kargs.k_descale_ptr = k_descale_ptr;
             kargs.v_descale_ptr = v_descale_ptr;
         }
-        if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                     QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+        if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                     QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP ||
+                     QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
         {
             kargs.q_descale_ptr = q_descale_ptr;
             kargs.k_descale_ptr = k_descale_ptr;
@@ -1007,19 +1011,20 @@ struct SageAttnFwdKernel
             {
                 batch_offset_v = key_start;
             }
-            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                         QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+            if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                         QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP ||
+                         QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
             {
+                // BLOCKSCALE, PERWARP, and PERTHREAD all use block_scale_seqstart in group mode
+                // They differ only in block size: BLOCKSCALE (Q:128, K:64), PERWARP (Q:32, K:64),
+                // PERTHREAD (Q:4, K:16)
                 const long_index_t bquery_start = kargs.block_scale_seqstart_q_ptr[i_batch];
                 const long_index_t bkey_start   = kargs.block_scale_seqstart_k_ptr[i_batch];
                 batch_offset_q_descale          = bquery_start;
                 batch_offset_k_descale          = bkey_start;
-                // Both BLOCKSCALE and PERWARP V use per-channel scale: batch_stride = nhead_k *
-                // hdim_v
-                batch_offset_v_descale = (QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP ||
-                                          QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
-                                             ? i_batch * kargs.batch_stride_v_descale
-                                             : bkey_start;
+                // BLOCKSCALE, PERWARP, and PERTHREAD V all use per-channel scale: batch_stride =
+                // nhead_k * hdim_v
+                batch_offset_v_descale = i_batch * kargs.batch_stride_v_descale;
             }
             batch_offset_o = query_start * kargs.stride_o;
 
@@ -1074,8 +1079,9 @@ struct SageAttnFwdKernel
             batch_offset_q = static_cast<long_index_t>(i_batch) * kargs.batch_stride_q;
             batch_offset_k = static_cast<long_index_t>(i_batch) * kargs.batch_stride_k;
             batch_offset_v = static_cast<long_index_t>(i_batch) * kargs.batch_stride_v;
-            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                         QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+            if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                         QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP ||
+                         QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
             {
                 batch_offset_q_descale =
                     static_cast<long_index_t>(i_batch) * kargs.batch_stride_q_descale;
@@ -1235,7 +1241,7 @@ struct SageAttnFwdKernel
         AttentionVariant variant;
         const auto variant_params = [&] {
             const float scale_s = [&] {
-                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
+                if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTENSOR)
                 {
                     float q_descale = *(reinterpret_cast<const float*>(kargs.q_descale_ptr));
                     float k_descale = *(reinterpret_cast<const float*>(kargs.k_descale_ptr));
@@ -1254,7 +1260,7 @@ struct SageAttnFwdKernel
 
         BlockIndices block_indices{i_batch, i_nhead, i_nhead / kargs.nhead_ratio_qk};
         auto o_acc_tile = [&]() {
-            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERTENSOR)
+            if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTENSOR)
             {
                 // TODO - move global load of descale to pipeline
                 float v_descale = *(reinterpret_cast<const float*>(kargs.v_descale_ptr));
@@ -1288,7 +1294,7 @@ struct SageAttnFwdKernel
                     block_indices,
                     smem_ptr);
             }
-            else if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE)
+            else if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE)
             {
                 const float* q_descale_ptr =
                     reinterpret_cast<const float*>(kargs.q_descale_ptr) +
@@ -1332,7 +1338,7 @@ struct SageAttnFwdKernel
                     0,
                     kargs.block_scale_size_kv);
             }
-            else if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+            else if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP)
             {
                 const float* q_descale_ptr =
                     reinterpret_cast<const float*>(kargs.q_descale_ptr) +
@@ -1381,6 +1387,60 @@ struct SageAttnFwdKernel
                     v_descale_ptr,
                     0,
                     kargs.block_scale_size_kv);
+            }
+            else if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
+            {
+                const float* q_descale_ptr =
+                    reinterpret_cast<const float*>(kargs.q_descale_ptr) +
+                    static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q_descale +
+                    batch_offset_q_descale;
+                const float* k_descale_ptr =
+                    reinterpret_cast<const float*>(kargs.k_descale_ptr) +
+                    static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
+                        kargs.nhead_stride_k_descale +
+                    batch_offset_k_descale;
+                const float* v_descale_ptr =
+                    reinterpret_cast<const float*>(kargs.v_descale_ptr) +
+                    static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) *
+                        kargs.nhead_stride_v_descale +
+                    batch_offset_v_descale;
+
+                // PERTHREAD: Each thread handles one row, so q_scale is constant for this thread
+                // Calculate q_scale based on the row this thread handles
+                // q_dram_window origin is {i_m0, 0}, so the global Q position for this thread's row
+                // is i_m0
+                constexpr index_t wave_size = 64; // AMD GPU wave size
+                const index_t wave_id = __builtin_amdgcn_readfirstlane(threadIdx.x / wave_size);
+
+                const index_t q_scale_idx =
+                    (i_m0 + wave_id * 32 + threadIdx.x % 32) / kargs.block_scale_size_q;
+                const float q_descale_value = q_descale_ptr[q_scale_idx];
+
+                // PERTHREAD: Q uses 4 tokens/scale, K uses 16 tokens/scale
+                // q_scale is pre-computed and passed as a scalar value
+                return SageAttnPipeline{}(
+                    q_dram_window,
+                    identity{}, // q_element_func
+                    k_dram_window,
+                    identity{}, // k_element_func
+                    v_dram_window,
+                    identity{}, // v_element_func
+                    identity{}, // s_acc_element_func - per-element scale applied in pipeline
+                    identity{}, // p_compute_element_func - No scaling (done in exp2)
+                    identity{}, // o_acc_element_func - No dequant (canceled by rowsum)
+                    mask,
+                    position_encoding,
+                    kargs.scale_s,
+                    variant,
+                    variant_params,
+                    block_indices,
+                    smem_ptr,
+                    nullptr, // q_descale_ptr not needed, using q_descale_value instead
+                    k_descale_ptr,
+                    v_descale_ptr,
+                    kargs.block_scale_size_q,  // Q: 4 tokens/scale
+                    kargs.block_scale_size_kv, // K: 16 tokens/scale
+                    q_descale_value);
             }
             else
             {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "ck_tile/ops/sageattention/block/block_sageattention_quant_scale_enum.hpp"
 #include "ck_tile/ops/sageattention/kernel/sageattn_fwd_kernel.hpp"
 #include "ck_tile/ops/sageattention/pipeline/block_sageattn_pipeline_enum.hpp"
 #include "ck_tile/ops/sageattention/pipeline/block_sageattn_pipeline_problem.hpp"

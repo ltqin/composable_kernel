@@ -5,7 +5,7 @@
 
 #include "ck_tile/core.hpp"
 #include "ck_tile/ops/common/tensor_layout.hpp"
-#include "ck_tile/ops/fmha/block/block_attention_quant_scale_enum.hpp"
+#include "ck_tile/ops/sageattention/block/block_sageattention_quant_scale_enum.hpp"
 #include "ck_tile/ops/sageattention/pipeline/block_sageattn_pipeline_qr_ks_vs_async_default_policy.hpp"
 #include "ck_tile/ops/reduce/block/block_reduce.hpp"
 
@@ -149,7 +149,8 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                const float* k_descale_ptr                  = nullptr,
                const float* v_descale_ptr                  = nullptr,
                [[maybe_unused]] index_t block_scale_size_q = 0,
-               index_t block_scale_size_kv                 = 0) const
+               index_t block_scale_size_kv                 = 0,
+               [[maybe_unused]] float q_descale_value      = 1.0f) const
     {
         static_assert(
             std::is_same_v<QDataType, remove_cvref_t<typename QDramBlockWindowTmp::DataType>> &&
@@ -302,16 +303,35 @@ struct BlockSageAttentionPipelineQRKSVSAsync
 
         static_assert(1 <= k0_loops);
         static_assert(1 <= k1_loops);
+        index_t thread_idx = (threadIdx.x % 64 / 32);
         // main loop
         do
         {
             float k_descale = 1.0f;
-            if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                         QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+            if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                         QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP)
             {
                 // K and V share the same seqlen_k position within a block
                 const index_t kv_idx = (seqlen_k_start + i_total_loops * kN0) / block_scale_size_kv;
                 k_descale            = k_descale_ptr[kv_idx];
+            }
+            // PERTHREAD mode: Pre-load K scales to registers before GEMM (only when needed)
+            float k_scales_reg[2] = {}; // Register array for K scales
+            if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
+            {
+                // Calculate K scale range for this loop iteration
+                const index_t k_global_start = seqlen_k_start + i_total_loops * kN0;
+                index_t k_scale_start_idx    = k_global_start / block_scale_size_kv;
+                if(thread_idx)
+                {
+                    k_scales_reg[0] = k_descale_ptr[k_scale_start_idx + 1];
+                    k_scales_reg[1] = k_descale_ptr[k_scale_start_idx + 3];
+                }
+                else
+                {
+                    k_scales_reg[0] = k_descale_ptr[k_scale_start_idx + 0];
+                    k_scales_reg[1] = k_descale_ptr[k_scale_start_idx + 2];
+                }
             }
 
             // STAGE 1, QK gemm
@@ -374,21 +394,45 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                 }
             }();
 
-            // dequant: create element function that combines q_descale and k_descale for BLOCKSCALE
-            auto s_acc_element_func_ = [&s_acc_element_func, k_descale]() {
-                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                             QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+            // dequant: create element function that combines q_descale and k_descale
+            auto s_acc_element_func_ = [&]() {
+                if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                             QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP)
                 {
                     // BLOCKSCALE/PERWARP: s_acc_element_func contains q_descale (per-tile or
-                    // per-warp) Combine with k_descale
+                    // per-warp). PERTHREAD uses per-element scaling, so not included here.
                     return s_acc_element_func * k_descale;
                 }
                 else
                     return s_acc_element_func;
             }();
 
+            // PERTHREAD dequant: Apply per-thread scales to s_acc elements
+            // Each thread processes elements in groups of 16, using pre-loaded combined scales
+            if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
+            {
+                float combined_scales_reg[2] = {}; // Pre-computed q_descale_value * k_scale
+                combined_scales_reg[0]     = q_descale_value * k_scales_reg[0]; // Pre-compute once
+                combined_scales_reg[1]     = q_descale_value * k_scales_reg[1]; // Pre-compute once
+                int count                  = 0;
+                constexpr auto s_acc_spans = decltype(s_acc)::get_distributed_spans();
+                sweep_tile_span(s_acc_spans[number<0>{}], [&](auto idx0) {
+                    sweep_tile_span(s_acc_spans[number<1>{}], [&](auto idx1) {
+                        constexpr auto i_j_idx     = make_tuple(idx0, idx1);
+                        const index_t scale_idx    = count >> 4;
+                        const float combined_scale = combined_scales_reg[scale_idx];
+
+                        s_acc(i_j_idx) *= combined_scale;
+
+                        count++;
+                    });
+                });
+            }
+            else
+            {
+                s_acc = tile_elementwise_in(s_acc_element_func_, s_acc);
+            }
             // STAGE 2, scale_s, mask, softmax
-            s_acc = tile_elementwise_in(s_acc_element_func_, s_acc);
             // logits_soft_cap is always disabled
             if constexpr(kPadSeqLenK || FmhaMask::IsMasking)
             {
@@ -495,8 +539,9 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                 // else: exp2(scale_s*s - scale_s*m + shift) = exp2(scale_s*s - (scale_s*m - shift))
                 auto validated_m = get_validated_m(m[i_idx]);
                 auto row_max     = scale_s * validated_m;
-                if constexpr(QScaleEnum == BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                             QScaleEnum == BlockAttentionQuantScaleEnum::PERWARP)
+                if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                             QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP ||
+                             QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
                 {
 #if CK_TILE_USE_OCP_FP8
                     validated_m -= OCP_FP8_SHIFT; // for Bias/Alibi
@@ -560,7 +605,7 @@ struct BlockSageAttentionPipelineQRKSVSAsync
             }();
 
             // STAGE 3, KV gemm
-            // For both BLOCKSCALE and PERWARP modes, accumulate directly to o_acc
+            // For BLOCKSCALE, PERWARP, and PERTHREAD modes, accumulate directly to o_acc
             // Apply per-channel v_descale after the loop (before normalization)
 
             if constexpr(k1_loops > 1)
@@ -637,10 +682,11 @@ struct BlockSageAttentionPipelineQRKSVSAsync
 
         } while(i_total_loops < num_total_loop);
 
-        // Apply per-channel v_descale for both BLOCKSCALE and PERWARP modes (after loop, before
-        // normalization)
-        if constexpr(Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::BLOCKSCALE ||
-                     Problem::QScaleEnum == ck_tile::BlockAttentionQuantScaleEnum::PERWARP)
+        // Apply per-channel v_descale for BLOCKSCALE, PERWARP, and PERTHREAD modes (after loop,
+        // before normalization)
+        if constexpr(Problem::QScaleEnum == ck_tile::BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
+                     Problem::QScaleEnum == ck_tile::BlockSageAttentionQuantScaleEnum::PERWARP ||
+                     Problem::QScaleEnum == ck_tile::BlockSageAttentionQuantScaleEnum::PERTHREAD)
         {
             // V is col-major, each column (channel) has its own scale
             // o_acc shape: [M0, N1] where N1 is hdim_v
@@ -712,11 +758,12 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                const AttentionVariantParams& variant_params,
                const BlockIndices& block_indices,
                void* smem_ptr,
-               [[maybe_unused]] const float* q_descale_ptr = nullptr,
+               const float* q_descale_ptr                  = nullptr,
                const float* k_descale_ptr                  = nullptr,
                const float* v_descale_ptr                  = nullptr,
                [[maybe_unused]] index_t block_scale_size_q = 0,
-               index_t block_scale_size_kv                 = 0) const
+               index_t block_scale_size_kv                 = 0,
+               [[maybe_unused]] float q_descale_value      = 1.0f) const
     {
         return operator()(q_dram_block_window_tmp,
                           identity{},
@@ -738,7 +785,8 @@ struct BlockSageAttentionPipelineQRKSVSAsync
                           k_descale_ptr,
                           v_descale_ptr,
                           block_scale_size_q,
-                          block_scale_size_kv);
+                          block_scale_size_kv,
+                          q_descale_value);
     }
 };
 
