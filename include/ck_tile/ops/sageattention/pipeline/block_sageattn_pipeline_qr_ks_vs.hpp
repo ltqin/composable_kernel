@@ -283,7 +283,7 @@ struct BlockSageAttentionPipelineQRKSVS
 
         static_assert(2 <= k0_loops);
         static_assert(1 <= k1_loops);
-        index_t thread_idx = (threadIdx.x % 64 / 32);
+        index_t thread_idx = (threadIdx.x % 64) / 32;
         // main loop
         do
         {

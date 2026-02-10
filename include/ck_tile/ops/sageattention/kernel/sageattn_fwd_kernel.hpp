@@ -164,25 +164,6 @@ struct SageAttnFwdKernel
         ck_tile::index_t nhead_stride_o;
     };
 
-    struct SageAttnFwdCommonBiasKargs
-    {
-        const void* bias_ptr               = nullptr;
-        ck_tile::index_t stride_bias       = 0;
-        ck_tile::index_t nhead_stride_bias = 0;
-    };
-
-    struct SageAttnFwdBatchModeBiasKargs : SageAttnFwdCommonBiasKargs
-    {
-        ck_tile::index_t batch_stride_bias = 0;
-    };
-
-    struct SageAttnFwdAlibiKargs
-    {
-        // alibi is batch*nhead*1, no matter in batch/group mode, they are the same
-        const void* alibi_slope_ptr;
-        ck_tile::index_t alibi_slope_stride; // stride in batch, or 0 for all batch share same slope
-    };
-
     struct SageAttnFwdMaskKargs
     {
         ck_tile::index_t window_size_left, window_size_right;
@@ -1024,7 +1005,8 @@ struct SageAttnFwdKernel
                 batch_offset_k_descale          = bkey_start;
                 // BLOCKSCALE, PERWARP, and PERTHREAD V all use per-channel scale: batch_stride =
                 // nhead_k * hdim_v
-                batch_offset_v_descale = i_batch * kargs.batch_stride_v_descale;
+                batch_offset_v_descale =
+                    static_cast<long_index_t>(i_batch) * kargs.batch_stride_v_descale;
             }
             batch_offset_o = query_start * kargs.stride_o;
 

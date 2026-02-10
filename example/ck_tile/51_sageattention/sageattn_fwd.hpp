@@ -16,14 +16,6 @@
 #include <utility>
 #include <variant>
 
-// keep sync with BlockAttentionBiasEnum (for future use, currently always NO_BIAS)
-enum class bias_enum
-{
-    no_bias          = 0,
-    elementwise_bias = 1,
-    alibi            = 2,
-};
-
 // SageAttention data type configs
 struct SageAttentionFwdFp32
 {
