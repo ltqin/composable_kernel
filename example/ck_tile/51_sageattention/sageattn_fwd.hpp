@@ -9,13 +9,20 @@
 #include "ck_tile/ops/epilogue.hpp"
 #include "ck_tile/ops/sageattn.hpp"
 
-#include "bias.hpp"
 #include "mask.hpp"
 #include "quant.hpp"
 
 #include <type_traits>
 #include <utility>
 #include <variant>
+
+// keep sync with BlockAttentionBiasEnum (for future use, currently always NO_BIAS)
+enum class bias_enum
+{
+    no_bias          = 0,
+    elementwise_bias = 1,
+    alibi            = 2,
+};
 
 // SageAttention data type configs
 struct SageAttentionFwdFp32
@@ -59,8 +66,7 @@ struct SageAttentionFwdTypeConfig<SageAttentionFwdFp16>
     using QDataType           = ck_tile::half_t;
     using KDataType           = ck_tile::half_t;
     using VDataType           = ck_tile::half_t;
-    using ScaleType           = float; // scale type for quantized inputs
-    using BiasDataType        = ck_tile::half_t;
+    using ScaleType           = float;           // scale type for quantized inputs
     using SaccDataType        = float;           // data type for first gemm accumulation
     using SMPLComputeDataType = float;           // data type for reduction, softmax
     using PDataType           = ck_tile::half_t; // data type for A matrix of second gemm
@@ -74,8 +80,7 @@ struct SageAttentionFwdTypeConfig<SageAttentionFwdBf16>
     using QDataType           = ck_tile::bf16_t;
     using KDataType           = ck_tile::bf16_t;
     using VDataType           = ck_tile::bf16_t;
-    using ScaleType           = float; // scale type for quantized inputs
-    using BiasDataType        = ck_tile::bf16_t;
+    using ScaleType           = float;           // scale type for quantized inputs
     using SaccDataType        = float;           // data type for first gemm accumulation
     using SMPLComputeDataType = float;           // data type for reduction, softmax
     using PDataType           = ck_tile::bf16_t; // data type for A matrix of second gemm
@@ -104,8 +109,7 @@ struct SageAttentionFwdTypeConfig<SageAttentionFwdBf8>
     using QDataType           = ck_tile::bf8_t;
     using KDataType           = ck_tile::bf8_t;
     using VDataType           = ck_tile::bf8_t;
-    using ScaleType           = float; // scale type for quantized inputs
-    using BiasDataType        = ck_tile::bf8_t;
+    using ScaleType           = float;          // scale type for quantized inputs
     using SaccDataType        = float;          // data type for first gemm accumulation
     using SMPLComputeDataType = float;          // data type for reduction, softmax
     using PDataType           = ck_tile::bf8_t; // data type for A matrix of second gemm
@@ -119,8 +123,7 @@ struct SageAttentionFwdTypeConfig<SageAttentionFwdFp8Bf16>
     using QDataType           = ck_tile::fp8_t;
     using KDataType           = ck_tile::fp8_t;
     using VDataType           = ck_tile::fp8_t;
-    using ScaleType           = float; // scale type for quantized inputs
-    using BiasDataType        = float;
+    using ScaleType           = float;          // scale type for quantized inputs
     using SaccDataType        = float;          // data type for first gemm accumulation
     using SMPLComputeDataType = float;          // data type for reduction, softmax
     using PDataType           = ck_tile::fp8_t; // data type for A matrix of second gemm
@@ -134,8 +137,7 @@ struct SageAttentionFwdTypeConfig<SageAttentionFwdI8Fp8Bf16>
     using QDataType           = ck_tile::int8_t;
     using KDataType           = ck_tile::int8_t;
     using VDataType           = ck_tile::fp8_t;
-    using ScaleType           = float; // scale type for Q and K
-    using BiasDataType        = float;
+    using ScaleType           = float;          // scale type for Q and K
     using SaccDataType        = float;          // Keep as float for softmax computation
     using SMPLComputeDataType = float;          // data type for reduction, softmax
     using PDataType           = ck_tile::fp8_t; // P in FP8 for 2nd gemm
@@ -423,7 +425,6 @@ struct sageattn_fwd_traits
     bool is_group_mode;
     bool is_v_rowmajor;
     mask_enum mask_type;
-    bias_enum bias_type; // 0:no bias, 1:elementwise bias, 2:alibi. sync with BlockAttentionBiasEnum
     quant_scale_enum qscale_type;
     bool skip_min_seqlen_q = false;
     // TODO: padding check is inside this api

@@ -92,7 +92,6 @@ using fmha_pipeline_problem = ck_tile::BlockSageAttnPipelineProblem<
     typename SageAttentionFwdTypeConfig<fmha_dtype>::VDataType,
     typename SageAttentionFwdTypeConfig<fmha_dtype>::SaccDataType,
     typename SageAttentionFwdTypeConfig<fmha_dtype>::SMPLComputeDataType,
-    typename SageAttentionFwdTypeConfig<fmha_dtype>::BiasDataType,
     typename SageAttentionFwdTypeConfig<fmha_dtype>::PDataType,
     typename SageAttentionFwdTypeConfig<fmha_dtype>::OaccDataType,
     typename SageAttentionFwdTypeConfig<fmha_dtype>::ODataType,

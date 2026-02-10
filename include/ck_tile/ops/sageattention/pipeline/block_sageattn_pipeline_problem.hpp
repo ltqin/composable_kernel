@@ -14,7 +14,6 @@ template <typename QDataType_,
           typename VDataType_,
           typename SaccDataType_,
           typename SMPLComputeDataType_,
-          typename BiasDataType_,
           typename PDataType_,
           typename OaccDataType_,
           typename ODataType_,
@@ -30,7 +29,6 @@ struct BlockSageAttnPipelineProblem
     using VDataType           = remove_cvref_t<VDataType_>;
     using SaccDataType        = remove_cvref_t<SaccDataType_>;
     using SMPLComputeDataType = remove_cvref_t<SMPLComputeDataType_>;
-    using BiasDataType        = remove_cvref_t<BiasDataType_>;
     using PDataType           = remove_cvref_t<PDataType_>;
     using OaccDataType        = remove_cvref_t<OaccDataType_>;
     using ODataType           = remove_cvref_t<ODataType_>;

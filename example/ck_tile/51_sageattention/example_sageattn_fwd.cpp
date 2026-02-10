@@ -47,7 +47,8 @@ auto create_args(int argc, char* argv[])
                 "n or 0, no scale\n"
                 "pt or 1, per-tensor scale\n"
                 "bs or 2, block scale (Q:128, KV:128)\n"
-                "pw or 3, per-warp scale (Q:32, KV:64)\n")
+                "pw or 3, per-warp scale (Q:32, KV:64)\n"
+                "pth or 4, per-thread scale (Q:4, KV:16)\n")
         .insert("iperm",
                 "1",
                 "permute input\n"
