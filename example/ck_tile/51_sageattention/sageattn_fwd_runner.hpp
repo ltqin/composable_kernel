@@ -870,7 +870,8 @@ fwd_result sageattn_fwd_run(mode_enum mode,
 
             // reference
             if(qscale.type == quant_scale_enum::blockscale ||
-               qscale.type == quant_scale_enum::perwarp)
+               qscale.type == quant_scale_enum::perwarp ||
+               qscale.type == quant_scale_enum::perthread)
             {
                 const ck_tile::index_t q_offset =
                     (mode == mode_enum::batch) ? 0 : block_scale_seqstart_q_host[wb];
@@ -893,35 +894,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                                k_descale_host(b_idx,
                                               std::get<0>(idx) / nr,
                                               k_offset + std::get<2>(idx) / block_scale_size_k_);
-                    });
-            }
-            else if(qscale.type == quant_scale_enum::perthread)
-            {
-                // PERTHREAD: Q uses 4 tokens/scale, K uses 16 tokens/scale
-                constexpr ck_tile::index_t q_scale_size = 4;  // Q: 4 tokens/scale
-                constexpr ck_tile::index_t k_scale_size = 16; // K: 16 tokens/scale
-                ck_tile::reference_batched_quant_gemm<QDataType,
-                                                      KDataType,
-                                                      SaccDataType,
-                                                      SMPLComputeDataType>(
-                    q_host_ref,
-                    k_host_ref,
-                    s_host_ref,
-                    ck_tile::idx_identity{},
-                    ck_tile::idx_identity{},
-                    [&](auto idx, auto value) {
-                        // Calculate scale indices based on token positions
-                        const ck_tile::index_t q_global_m =
-                            std::get<1>(idx); // M dimension (seqlen_q)
-                        const ck_tile::index_t k_global_n =
-                            std::get<2>(idx); // N dimension (seqlen_k)
-
-                        const ck_tile::index_t q_scale_idx = q_global_m / q_scale_size;
-                        const ck_tile::index_t k_scale_idx = k_global_n / k_scale_size;
-
-                        return value * scale_s *
-                               q_descale_host(b_idx, std::get<0>(idx), q_scale_idx) *
-                               k_descale_host(b_idx, std::get<0>(idx) / nr, k_scale_idx);
                     });
             }
             else
