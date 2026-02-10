@@ -373,7 +373,6 @@ template <ck_tile::index_t HDim_,
           bool kIsVLayoutRowMajor_,
           ck_tile::BlockSageAttnPipelineEnum FmhaPipelineEnum_,
           typename FmhaMask_,
-          ck_tile::BlockAttentionBiasEnum BiasEnum_,
           ck_tile::BlockSageAttentionQuantScaleEnum QScaleEnum_,
           bool kPadS_,
           bool kPadSK_,
@@ -395,7 +394,6 @@ struct sageattn_fwd_traits_
     static constexpr bool kIsVLayoutRowMajor         = kIsVLayoutRowMajor_;
     static constexpr auto FmhaPipelineEnum           = FmhaPipelineEnum_;
     using FmhaMask                                   = ck_tile::remove_cvref_t<FmhaMask_>;
-    static constexpr auto BiasEnum                   = BiasEnum_;
     static constexpr auto QScaleEnum                 = QScaleEnum_;
     static constexpr bool kPadS                      = kPadS_;
     static constexpr bool kPadSK                     = kPadSK_;
