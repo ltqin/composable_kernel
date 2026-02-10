@@ -203,7 +203,7 @@ struct SageAttnFwdKernel
         ck_tile::index_t nhead_stride_v_descale;
 
         ck_tile::index_t block_scale_size_q;
-        ck_tile::index_t block_scale_size_kv;
+        ck_tile::index_t block_scale_size_k;
     };
 
     struct SageAttnFwdBatchBlockScaleKargs : public SageAttnFwdCommonBlockScaleKargs
@@ -324,7 +324,7 @@ struct SageAttnFwdKernel
                   ck_tile::index_t batch_stride_k_descale,
                   ck_tile::index_t batch_stride_v_descale,
                   ck_tile::index_t block_scale_size_q,
-                  ck_tile::index_t block_scale_size_kv,
+                  ck_tile::index_t block_scale_size_k,
                   ck_tile::index_t window_size_left,
                   ck_tile::index_t window_size_right,
                   ck_tile::index_t mask_type,
@@ -386,8 +386,8 @@ struct SageAttnFwdKernel
             kargs.batch_stride_k_descale = batch_stride_k_descale;
             kargs.batch_stride_v_descale = batch_stride_v_descale;
 
-            kargs.block_scale_size_q  = block_scale_size_q;
-            kargs.block_scale_size_kv = block_scale_size_kv;
+            kargs.block_scale_size_q = block_scale_size_q;
+            kargs.block_scale_size_k = block_scale_size_k;
         }
         // logits_soft_cap is always disabled
 
@@ -603,7 +603,7 @@ struct SageAttnFwdKernel
                   ck_tile::index_t nhead_stride_v_descale,
                   ck_tile::index_t batch_stride_v_descale,
                   ck_tile::index_t block_scale_size_q,
-                  ck_tile::index_t block_scale_size_kv,
+                  ck_tile::index_t block_scale_size_k,
                   const void* block_scale_seqstart_q_ptr,
                   const void* block_scale_seqstart_k_ptr,
                   ck_tile::index_t window_size_left,
@@ -667,8 +667,8 @@ struct SageAttnFwdKernel
 
             kargs.batch_stride_v_descale = batch_stride_v_descale;
 
-            kargs.block_scale_size_q  = block_scale_size_q;
-            kargs.block_scale_size_kv = block_scale_size_kv;
+            kargs.block_scale_size_q = block_scale_size_q;
+            kargs.block_scale_size_k = block_scale_size_k;
 
             kargs.block_scale_seqstart_q_ptr =
                 reinterpret_cast<const int32_t*>(block_scale_seqstart_q_ptr);
@@ -1336,7 +1336,7 @@ struct SageAttnFwdKernel
                     k_descale_ptr,
                     v_descale_ptr,
                     0,
-                    kargs.block_scale_size_kv);
+                    kargs.block_scale_size_k);
             }
             else if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP)
             {
@@ -1386,7 +1386,7 @@ struct SageAttnFwdKernel
                     k_descale_ptr,
                     v_descale_ptr,
                     0,
-                    kargs.block_scale_size_kv);
+                    kargs.block_scale_size_k);
             }
             else if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
             {
@@ -1438,8 +1438,8 @@ struct SageAttnFwdKernel
                     nullptr, // q_descale_ptr not needed, using q_descale_value instead
                     k_descale_ptr,
                     v_descale_ptr,
-                    kargs.block_scale_size_q,  // Q: 4 tokens/scale
-                    kargs.block_scale_size_kv, // K: 16 tokens/scale
+                    kargs.block_scale_size_q, // Q: 4 tokens/scale
+                    kargs.block_scale_size_k, // K: 16 tokens/scale
                     q_descale_value);
             }
             else

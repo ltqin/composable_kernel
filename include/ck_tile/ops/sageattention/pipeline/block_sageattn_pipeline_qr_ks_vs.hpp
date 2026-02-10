@@ -144,7 +144,7 @@ struct BlockSageAttentionPipelineQRKSVS
                const float* k_descale_ptr                  = nullptr,
                const float* v_descale_ptr                  = nullptr,
                [[maybe_unused]] index_t block_scale_size_q = 0,
-               index_t block_scale_size_kv                 = 0,
+               index_t block_scale_size_k                  = 0,
                [[maybe_unused]] float q_descale_value      = 1.0f) const
     {
         static_assert(
@@ -292,7 +292,7 @@ struct BlockSageAttentionPipelineQRKSVS
                          QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP)
             {
                 // K and V share the same seqlen_k position within a block
-                const index_t kv_idx = (seqlen_k_start + i_total_loops * kN0) / block_scale_size_kv;
+                const index_t kv_idx = (seqlen_k_start + i_total_loops * kN0) / block_scale_size_k;
                 k_descale            = k_descale_ptr[kv_idx];
             }
             // PERTHREAD mode: Pre-load K scales to registers before GEMM (only when needed)
@@ -301,7 +301,7 @@ struct BlockSageAttentionPipelineQRKSVS
             {
                 // Calculate K scale range for this loop iteration
                 const index_t k_global_start = seqlen_k_start + i_total_loops * kN0;
-                index_t k_scale_start_idx    = k_global_start / block_scale_size_kv;
+                index_t k_scale_start_idx    = k_global_start / block_scale_size_k;
                 if(thread_idx)
                 {
                     k_scales_reg[0] = k_descale_ptr[k_scale_start_idx + 1];
@@ -685,7 +685,7 @@ struct BlockSageAttentionPipelineQRKSVS
                const float* k_descale_ptr                  = nullptr,
                const float* v_descale_ptr                  = nullptr,
                [[maybe_unused]] index_t block_scale_size_q = 0,
-               index_t block_scale_size_kv                 = 0,
+               index_t block_scale_size_k                  = 0,
                [[maybe_unused]] float q_descale_value      = 1.0f) const
     {
         return operator()(q_dram_block_window_tmp,
@@ -708,7 +708,7 @@ struct BlockSageAttentionPipelineQRKSVS
                           k_descale_ptr,
                           v_descale_ptr,
                           block_scale_size_q,
-                          block_scale_size_kv,
+                          block_scale_size_k,
                           q_descale_value);
     }
 };

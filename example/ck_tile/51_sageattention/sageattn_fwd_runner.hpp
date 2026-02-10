@@ -193,16 +193,15 @@ fwd_result sageattn_fwd_run(mode_enum mode,
 
     quant_scale_info qscale = quant_scale_info::decode(qscale_str);
 
-    // Note: block_scale_size_q_ and block_scale_size_kv_ should be greater than or equal to the
-    // compute block size
-    // PERWARP mode: Q=32 (warp size), KV=64 (2x warp size)
-    // BLOCKSCALE mode: Q=128 (tile size), KV=64 (2x warp size)
-    // PERTHREAD mode: Q=4 (tokens/scale), KV=16 (tokens/scale)
+    // PERWARP mode: Q=32 (warp size), K=64 (2x warp size)
+    // BLOCKSCALE mode: Q=128 (tile size), K=64 (2x warp size)
+    // PERTHREAD mode: Q=4 (tokens/scale), K=16 (tokens/scale)
+    // Note: V uses per-channel scale, not block scale
     const ck_tile::index_t block_scale_size_q_ = (qscale.type == quant_scale_enum::perwarp) ? 32
                                                  : (qscale.type == quant_scale_enum::perthread)
                                                      ? 4
                                                      : 128;
-    const ck_tile::index_t block_scale_size_kv_ =
+    const ck_tile::index_t block_scale_size_k_ =
         (qscale.type == quant_scale_enum::perthread) ? 16 : 64;
 
     const auto seqstart_q_host              = to_seqstarts(seqlen_qs);
@@ -313,7 +312,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             const int32_t real_seqlen_q = seqstart_q_host[wb + 1] - seqstart_q_host[wb];
             const int32_t real_seqlen_k = seqstart_k_host[wb + 1] - seqstart_k_host[wb];
             i_block_scale_q += ck_tile::integer_divide_ceil(real_seqlen_q, block_scale_size_q_);
-            i_block_scale_k += ck_tile::integer_divide_ceil(real_seqlen_k, block_scale_size_kv_);
+            i_block_scale_k += ck_tile::integer_divide_ceil(real_seqlen_k, block_scale_size_k_);
             block_scale_seqstart_q_host.push_back(i_block_scale_q);
             block_scale_seqstart_k_host.push_back(i_block_scale_k);
         }
@@ -323,9 +322,9 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         (mode == mode_enum::batch)
             ? ck_tile::integer_divide_ceil(shape_seqlen_q, block_scale_size_q_)
             : i_block_scale_q;
-    const ck_tile::index_t num_block_scale_kv =
+    const ck_tile::index_t num_block_scale_k =
         (mode == mode_enum::batch)
-            ? ck_tile::integer_divide_ceil(shape_seqlen_k, block_scale_size_kv_)
+            ? ck_tile::integer_divide_ceil(shape_seqlen_k, block_scale_size_k_)
             : i_block_scale_k;
 
     ck_tile::HostTensor<QDataType> q_host(
@@ -336,28 +335,15 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         is_v_rowmajor ? get_lengths(i_perm, shape_batch, nhead_k, shape_seqlen_k, hdim_v)
                       : get_lengths(i_perm, shape_batch, nhead_k, hdim_v, shape_seqlen_k));
 
-    // TODO - change the tensor length for different quant scale
-    // PERTHREAD: Q uses 4 tokens/scale, K uses 16 tokens/scale
-    const ck_tile::index_t num_perthread_scale_q =
-        (qscale.type == quant_scale_enum::perthread)
-            ? ck_tile::integer_divide_ceil(shape_seqlen_q, 4)
-            : 0;
-    const ck_tile::index_t num_perthread_scale_kv =
-        (qscale.type == quant_scale_enum::perthread)
-            ? ck_tile::integer_divide_ceil(shape_seqlen_k, 16)
-            : 0;
-
     ck_tile::HostTensor<float> q_descale_host(
-        (qscale.type == quant_scale_enum::blockscale || qscale.type == quant_scale_enum::perwarp)
+        (qscale.type == quant_scale_enum::blockscale || qscale.type == quant_scale_enum::perwarp ||
+         qscale.type == quant_scale_enum::perthread)
             ? std::array<ck_tile::index_t, 3>{shape_batch, nhead, num_block_scale_q}
-        : (qscale.type == quant_scale_enum::perthread)
-            ? std::array<ck_tile::index_t, 3>{shape_batch, nhead, num_perthread_scale_q}
             : std::array<ck_tile::index_t, 3>{1, 1, 1});
     ck_tile::HostTensor<float> k_descale_host(
-        (qscale.type == quant_scale_enum::blockscale || qscale.type == quant_scale_enum::perwarp)
-            ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, num_block_scale_kv}
-        : (qscale.type == quant_scale_enum::perthread)
-            ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, num_perthread_scale_kv}
+        (qscale.type == quant_scale_enum::blockscale || qscale.type == quant_scale_enum::perwarp ||
+         qscale.type == quant_scale_enum::perthread)
+            ? std::array<ck_tile::index_t, 3>{shape_batch, nhead_k, num_block_scale_k}
             : std::array<ck_tile::index_t, 3>{1, 1, 1});
     // BLOCKSCALE, PERWARP, and PERTHREAD V all use per-channel scale (col-major layout)
     ck_tile::HostTensor<float> v_descale_host(
@@ -663,33 +649,17 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         if(qscale.type == quant_scale_enum::blockscale ||
            qscale.type == quant_scale_enum::perwarp || qscale.type == quant_scale_enum::perthread)
         {
-            if(qscale.type == quant_scale_enum::perthread)
-            {
-                args.nhead_stride_q_descale = num_perthread_scale_q;
-                args.nhead_stride_k_descale = num_perthread_scale_kv;
-            }
-            else
-            {
-                args.nhead_stride_q_descale = num_block_scale_q;
-                args.nhead_stride_k_descale = num_block_scale_kv;
-            }
+            args.nhead_stride_q_descale = num_block_scale_q;
+            args.nhead_stride_k_descale = num_block_scale_k;
             // BLOCKSCALE, PERWARP, and PERTHREAD V all use per-channel scale: stride = hdim_v
             args.nhead_stride_v_descale = hdim_v;
             args.block_scale_size_q     = block_scale_size_q_;
-            args.block_scale_size_kv    = block_scale_size_kv_;
+            args.block_scale_size_k     = block_scale_size_k_;
 
             if(mode == mode_enum::batch)
             {
-                if(qscale.type == quant_scale_enum::perthread)
-                {
-                    args.batch_stride_q_descale = nhead * num_perthread_scale_q;
-                    args.batch_stride_k_descale = nhead_k * num_perthread_scale_kv;
-                }
-                else
-                {
-                    args.batch_stride_q_descale = nhead * num_block_scale_q;
-                    args.batch_stride_k_descale = nhead_k * num_block_scale_kv;
-                }
+                args.batch_stride_q_descale = nhead * num_block_scale_q;
+                args.batch_stride_k_descale = nhead_k * num_block_scale_k;
                 // BLOCKSCALE, PERWARP, and PERTHREAD V all use per-channel scale: batch_stride =
                 // nhead_k * hdim_v
                 args.batch_stride_v_descale = nhead_k * hdim_v;
@@ -922,7 +892,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                                               q_offset + std::get<1>(idx) / block_scale_size_q_) *
                                k_descale_host(b_idx,
                                               std::get<0>(idx) / nr,
-                                              k_offset + std::get<2>(idx) / block_scale_size_kv_);
+                                              k_offset + std::get<2>(idx) / block_scale_size_k_);
                     });
             }
             else if(qscale.type == quant_scale_enum::perthread)
