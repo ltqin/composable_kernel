@@ -4,6 +4,8 @@
 #pragma once
 
 #include "ck_tile/core.hpp"
+#include "ck_tile/ops/common/load_interleaved_pk_type.hpp"
+#include "ck_tile/ops/elementwise/unary_element_wise_operation.hpp"
 #include "ck_tile/ops/sageattention/block/block_sageattention_quant_scale_enum.hpp"
 #include "ck_tile/ops/sageattention/pipeline/block_sageattn_pipeline_qr_ks_vs_default_policy.hpp"
 #include "ck_tile/ops/reduce/block/block_reduce.hpp"
@@ -17,7 +19,9 @@ struct BlockSageAttentionPipelineQRKSVS
     using Problem             = remove_cvref_t<Problem_>;
     using Policy              = remove_cvref_t<Policy_>;
     using QDataType           = remove_cvref_t<typename Problem::QDataType>;
+    using QGemmDataType       = SageAttnQKGemmQDataType<Problem>;
     using KDataType           = remove_cvref_t<typename Problem::KDataType>;
+    using KLdsDataType        = SageAttnQKGemmKDataType<Problem>;
     using VDataType           = remove_cvref_t<typename Problem::VDataType>;
     using SaccDataType        = remove_cvref_t<typename Problem::SaccDataType>;
     using SMPLComputeDataType = remove_cvref_t<typename Problem::SMPLComputeDataType>;
@@ -161,9 +165,9 @@ struct BlockSageAttentionPipelineQRKSVS
                       "wrong!");
 
         // K tile in LDS
-        KDataType* k_lds_ptr = static_cast<KDataType*>(static_cast<void*>(
+        KLdsDataType* k_lds_ptr = static_cast<KLdsDataType*>(static_cast<void*>(
             static_cast<char*>(smem_ptr) + Policy::template GetSmemSizeQ<Problem>()));
-        auto k_lds           = make_tensor_view<address_space_enum::lds>(
+        auto k_lds              = make_tensor_view<address_space_enum::lds>(
             k_lds_ptr, Policy::template MakeKLdsBlockDescriptor<Problem>());
         auto k_lds_window =
             make_tile_window(k_lds, make_tuple(number<kN0>{}, number<kK0>{}), {0, 0});
@@ -179,12 +183,12 @@ struct BlockSageAttentionPipelineQRKSVS
         constexpr auto gemm_0 = Policy::template GetQKBlockGemm<Problem>();
         constexpr auto gemm_1 = Policy::template GetKVBlockGemm<Problem>();
 
-        auto q_dram_window = make_tile_window(q_dram_block_window_tmp.get_bottom_tensor_view(),
-                                              q_dram_block_window_tmp.get_window_lengths(),
-                                              q_dram_block_window_tmp.get_window_origin(),
-                                              Policy::template MakeQRegTileDistribution<Problem>());
-
-        auto q = load_tile(q_dram_window);
+        auto q_dram_window_reg =
+            make_tile_window(q_dram_block_window_tmp.get_bottom_tensor_view(),
+                             q_dram_block_window_tmp.get_window_lengths(),
+                             q_dram_block_window_tmp.get_window_origin(),
+                             Policy::template MakeQRegTileDistribution<Problem>());
+        auto q = load_tile(q_dram_window_reg);
 
         using SaccBlockTileType = decltype(gemm_0.MakeCBlockTile());
 
@@ -213,7 +217,7 @@ struct BlockSageAttentionPipelineQRKSVS
             set_tile(m, -numeric<SMPLComputeDataType>::infinity());
             clear_tile(l);
         }
-        const auto q_origin = q_dram_window.get_window_origin();
+        const auto q_origin = q_dram_block_window_tmp.get_window_origin();
 
         const auto tile_range_result = [&mask, &q_origin]() {
             auto [start, end] =
@@ -231,7 +235,7 @@ struct BlockSageAttentionPipelineQRKSVS
             if(num_total_loop <= 0)
             {
                 // Note: here occ are all cleard, return it
-                // Note: q loaded but no fence, ignore it.
+                // Note: no q/k/v work is needed for this tile.
                 return o_acc;
             }
         }
@@ -247,7 +251,29 @@ struct BlockSageAttentionPipelineQRKSVS
                              {0, 0}, // TODO: hdim split?
                              Policy::template MakeVDramTileDistribution<Problem>());
 
-        auto q_tile = tile_elementwise_in(q_element_func, q);
+        auto q_tile = [&]() {
+            if constexpr(std::is_same_v<QDataType, QGemmDataType>)
+                return tile_elementwise_in(q_element_func, q);
+            else
+            {
+                auto q_tile_tmp = make_static_distributed_tensor<QGemmDataType>(
+                    Policy::template MakeQRegTileDistribution<Problem>());
+                constexpr index_t kPackedSize = numeric_traits<QDataType>::PackedSize;
+                static_assert(std::is_same_v<QDataType, ck_tile::pk_int4_t>);
+                static_assert(kPackedSize == 2);
+                static_assert(decltype(q_tile_tmp)::get_thread_buffer_size() ==
+                              decltype(q)::get_thread_buffer_size() * kPackedSize);
+
+                static_for<0, decltype(q)::get_thread_buffer_size(), 1>{}([&](auto i) {
+                    const auto q_pair = ck_tile::pk_int4_t_to_fp32x2_t(q.get_thread_buffer().at(i));
+                    q_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 0>{}) =
+                        ck_tile::type_convert<QGemmDataType>(q_pair.lo);
+                    q_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 1>{}) =
+                        ck_tile::type_convert<QGemmDataType>(q_pair.hi);
+                });
+                return q_tile_tmp;
+            }
+        }();
 
         // prefetch K tile
         index_t i_total_loops      = 0;
@@ -321,13 +347,44 @@ struct BlockSageAttentionPipelineQRKSVS
                 k_dram_block_window.get_window_origin(),
                 Policy::template MakeKDramTileDistribution<Problem>()); // K DRAM tile window for
                                                                         // load
-            auto s_acc_gemm   = SaccBlockTileType{};
-            auto k_block_tile = load_tile(k_dram_window);
+            auto s_acc_gemm              = SaccBlockTileType{};
+            const auto load_k_block_tile = [&]() {
+                if constexpr(std::is_same_v<KDataType, KLdsDataType>)
+                    return load_tile(k_dram_window);
+                else
+                {
+                    auto k_block_tile_tmp = make_static_distributed_tensor<KLdsDataType>(
+                        k_dram_window.get_tile_distribution());
+                    auto k_src                    = load_tile(k_dram_window);
+                    constexpr index_t kPackedSize = numeric_traits<KDataType>::PackedSize;
+                    static_assert(std::is_same_v<KDataType, ck_tile::pk_int4_t>);
+                    static_assert(kPackedSize == 2);
+                    static_assert(decltype(k_block_tile_tmp)::get_thread_buffer_size() ==
+                                  decltype(k_src)::get_thread_buffer_size() * kPackedSize);
+
+                    static_for<0, decltype(k_src)::get_thread_buffer_size(), 1>{}([&](auto i) {
+                        const auto k_pair =
+                            ck_tile::pk_int4_t_to_fp32x2_t(k_src.get_thread_buffer().at(i));
+                        k_block_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 0>{}) =
+                            ck_tile::type_convert<KLdsDataType>(k_pair.lo);
+                        k_block_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 1>{}) =
+                            ck_tile::type_convert<KLdsDataType>(k_pair.hi);
+                    });
+                    return k_block_tile_tmp;
+                }
+            };
+            const auto store_k_block_tile_to_lds = [&](const auto& k_block_tile_) {
+                if constexpr(std::is_same_v<KDataType, KLdsDataType>)
+                    store_tile(k_lds_window, tile_elementwise_in(k_element_func, k_block_tile_));
+                else
+                    store_tile(k_lds_window, k_block_tile_);
+            };
+            auto k_block_tile = load_k_block_tile();
             {
                 move_tile_window(k_dram_window, {0, kK0});
                 clear_tile(s_acc_gemm); // initialize C
-                store_tile(k_lds_window, tile_elementwise_in(k_element_func, k_block_tile));
-                k_block_tile = load_tile(k_dram_window);
+                store_k_block_tile_to_lds(k_block_tile);
+                k_block_tile = load_k_block_tile();
             }
 
             if constexpr(k0_loops > 2)
@@ -343,10 +400,8 @@ struct BlockSageAttentionPipelineQRKSVS
                     block_sync_lds();
                     move_tile_window(k_dram_window, {0, kK0});
 
-                    store_tile(
-                        k_lds_window,
-                        tile_elementwise_in(k_element_func, k_block_tile)); // LDS write i + 1
-                    k_block_tile = load_tile(k_dram_window);                // global read i + 2
+                    store_k_block_tile_to_lds(k_block_tile); // LDS write i + 1
+                    k_block_tile = load_k_block_tile();      // global read i + 2
                 });
             }
 
@@ -361,7 +416,7 @@ struct BlockSageAttentionPipelineQRKSVS
                 schedule_gemm0();
                 block_sync_lds();
 
-                store_tile(k_lds_window, tile_elementwise_in(k_element_func, k_block_tile));
+                store_k_block_tile_to_lds(k_block_tile);
                 block_sync_lds();
 
                 gemm_0(s_acc_gemm,

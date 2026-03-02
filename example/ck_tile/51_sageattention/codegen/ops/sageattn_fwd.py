@@ -34,6 +34,7 @@ DTYPE_BITS = {
     "fp8": 8,
     "fp8bf16": 8,
     "i8fp8bf16": 8,
+    "i4fp8bf16": 4,
     "bf8": 8,
 }
 
@@ -764,10 +765,17 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
     _DT_FP8 = ("fp8",)
     _DT_FP8BF16 = ("fp8bf16",)
     _DT_I8FP8BF16 = ("i8fp8bf16",)
+    _DT_I4FP8BF16 = ("i4fp8bf16",)
 
     @classmethod
     def supported_dtypes(cls) -> Tuple[str]:
-        return cls._DT_FP16_BF16 + cls._DT_FP8 + cls._DT_FP8BF16 + cls._DT_I8FP8BF16
+        return (
+            cls._DT_FP16_BF16
+            + cls._DT_FP8
+            + cls._DT_FP8BF16
+            + cls._DT_I8FP8BF16
+            + cls._DT_I4FP8BF16
+        )
 
     # TODO: design a more practical way to do it
     # this is current supported tile size per hdim
@@ -781,6 +789,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
             dtype in cls._DT_FP8
             or dtype in cls._DT_FP8BF16
             or dtype in cls._DT_I8FP8BF16
+            or dtype in cls._DT_I4FP8BF16
         ):
             return {
                 ( 64,  64) : [SageAttnFwdTileSize(128,  64,  32,  64,  32,  64,  2, 1, 1,  2, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
@@ -815,7 +824,11 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
                 else:
                     pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "f", "t", "t", qscale, mask, skip))  # fmt: skip
                     pipelines.append(SageAttnFwdPipeline("qr_async", vlayout, "t", "t", "t", "t", qscale, mask, skip))  # fmt: skip
-        elif dtype in cls._DT_FP8BF16 or dtype in cls._DT_I8FP8BF16:
+        elif (
+            dtype in cls._DT_FP8BF16
+            or dtype in cls._DT_I8FP8BF16
+            or dtype in cls._DT_I4FP8BF16
+        ):
             # no need lse kernels
             skip = "f"  # skip: only false
             for mask, qscale, vlayout in itertools.product(
@@ -823,7 +836,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
                 ["no", "pertensor", "blockscale", "perwarp", "perthread"],
                 ["row", "col"],  # Support both row and col major layouts
             ):
-                if hdim == 64:
+                if hdim == 64 or dtype in cls._DT_I4FP8BF16:
                     pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "f", "f", "f", qscale, mask, skip))  # fmt: skip
                     pipelines.append(SageAttnFwdPipeline("qr", vlayout, "t", "t", "f", "f", qscale, mask, skip))  # fmt: skip
                 else:

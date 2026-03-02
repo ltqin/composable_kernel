@@ -150,7 +150,7 @@ struct FillUniformDistribution<ck_tile::pk_int4_t>
                                                             0x66,
                                                             0x77};
         std::mt19937 gen(seed_.has_value() ? *seed_ : std::random_device{}());
-        std::uniform_int_distribution<std::int32_t> dis(0, max_value - min_value + 1);
+        std::uniform_int_distribution<std::int32_t> dis(0, max_value - min_value);
         while(first != last)
         {
             int randomInt = dis(gen);

@@ -49,6 +49,9 @@ struct SageAttentionFwdI8Fp8Bf16
 {
 };
 
+struct SageAttentionFwdI4Fp8Bf16
+{
+};
 template <typename DataType>
 struct SageAttentionFwdTypeConfig;
 
@@ -128,6 +131,20 @@ struct SageAttentionFwdTypeConfig<SageAttentionFwdI8Fp8Bf16>
 {
     using QDataType           = ck_tile::int8_t;
     using KDataType           = ck_tile::int8_t;
+    using VDataType           = ck_tile::fp8_t;
+    using ScaleType           = float;          // scale type for Q and K
+    using SaccDataType        = float;          // Keep as float for softmax computation
+    using SMPLComputeDataType = float;          // data type for reduction, softmax
+    using PDataType           = ck_tile::fp8_t; // P in FP8 for 2nd gemm
+    using OaccDataType        = float;          // data type for second gemm accumulation
+    using ODataType           = ck_tile::bf16_t;
+};
+
+template <>
+struct SageAttentionFwdTypeConfig<SageAttentionFwdI4Fp8Bf16>
+{
+    using QDataType           = ck_tile::pk_int4_t;
+    using KDataType           = ck_tile::pk_int4_t;
     using VDataType           = ck_tile::fp8_t;
     using ScaleType           = float;          // scale type for Q and K
     using SaccDataType        = float;          // Keep as float for softmax computation

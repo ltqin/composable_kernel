@@ -54,7 +54,7 @@ auto create_args(int argc, char* argv[])
                 "permute input\n"
                 "if true, will be b*h*s*d, else b*s*h*d")
         .insert("operm", "1", "permute output")
-        .insert("prec", "fp8bf16", "data type. fp8bf16/i8fp8bf16")
+        .insert("prec", "fp8bf16", "data type. fp8bf16/i8fp8bf16/i4fp8bf16")
         .insert("mask",
                 "0",
                 "0: no mask, 1: top-left(same as 't'), 2:bottom-right(same as 'b')\n"
@@ -182,6 +182,10 @@ int main(int argc, char* argv[])
         else if(data_type == "i8fp8bf16")
         {
             return run<SageAttentionFwdI8Fp8Bf16>(arg_parser) == fwd_result::success ? 0 : -2;
+        }
+        else if(data_type == "i4fp8bf16")
+        {
+            return run<SageAttentionFwdI4Fp8Bf16>(arg_parser) == fwd_result::success ? 0 : -2;
         }
         std::cerr << "Unsupported precision: " << data_type << std::endl;
         return -1;

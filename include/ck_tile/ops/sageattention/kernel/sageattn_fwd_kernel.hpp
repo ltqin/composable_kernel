@@ -1088,13 +1088,15 @@ struct SageAttnFwdKernel
         }
 
         // for simplicity, batch stride we just modify the pointer
-        const QDataType* q_ptr = reinterpret_cast<const QDataType*>(kargs.q_ptr) +
-                                 static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q +
-                                 batch_offset_q;
+        const QDataType* q_ptr =
+            reinterpret_cast<const QDataType*>(kargs.q_ptr) +
+            (static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q + batch_offset_q) /
+                ck_tile::numeric_traits<QDataType>::PackedSize;
         const KDataType* k_ptr =
             reinterpret_cast<const KDataType*>(kargs.k_ptr) +
-            static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) * kargs.nhead_stride_k +
-            batch_offset_k;
+            (static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) * kargs.nhead_stride_k +
+             batch_offset_k) /
+                ck_tile::numeric_traits<KDataType>::PackedSize;
         const VDataType* v_ptr =
             reinterpret_cast<const VDataType*>(kargs.v_ptr) +
             static_cast<long_index_t>(i_nhead / kargs.nhead_ratio_qk) * kargs.nhead_stride_v +
