@@ -363,9 +363,9 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             : i_block_scale_k;
 
     ck_tile::HostTensor<QDataType> q_host(
-        get_lengths(i_perm, shape_batch, nhead, shape_seqlen_q, hdim_q_storage_q));
+        get_lengths(i_perm, shape_batch, nhead, shape_seqlen_q, hdim_q));
     ck_tile::HostTensor<KDataType> k_host(
-        get_lengths(i_perm, shape_batch, nhead_k, shape_seqlen_k, hdim_q_storage_k));
+        get_lengths(i_perm, shape_batch, nhead_k, shape_seqlen_k, hdim_q));
     ck_tile::HostTensor<VDataType> v_host(
         is_v_rowmajor ? get_lengths(i_perm, shape_batch, nhead_k, shape_seqlen_k, hdim_v)
                       : get_lengths(i_perm, shape_batch, nhead_k, hdim_v, shape_seqlen_k));
@@ -437,10 +437,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         ck_tile::FillUniformDistribution<QDataType>{-q_dtype_max, q_dtype_max, next_seed()}(q_host);
         ck_tile::FillUniformDistribution<KDataType>{-k_dtype_max, k_dtype_max, next_seed()}(k_host);
         ck_tile::FillUniformDistribution<VDataType>{-v_dtype_max, v_dtype_max, next_seed()}(v_host);
-
-        // ck_tile::FillUniformDistribution<QDataType>{-1, -1, next_seed()}(q_host);
-        // ck_tile::FillUniformDistribution<KDataType>{-1, -1, next_seed()}(k_host);
-        // ck_tile::FillUniformDistribution<VDataType>{1, 1, next_seed()}(v_host);
     }
     if(qscale.type == quant_scale_enum::pertensor)
     {
@@ -474,9 +470,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         // hdim_v])
         ck_tile::FillUniformDistribution<float>{max_descale_v * 0.8f, max_descale_v, next_seed()}(
             v_descale_host);
-        // ck_tile::FillUniformDistribution<float>{1, 1, next_seed()}(q_descale_host);
-        // ck_tile::FillUniformDistribution<float>{1, 1, next_seed()}(k_descale_host);
-        // ck_tile::FillUniformDistribution<float>{1, 1, next_seed()}(v_descale_host);
     }
 
     ck_tile::DeviceMem q_buf(q_host.get_element_space_size_in_bytes());
@@ -910,19 +903,17 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                               << ", got " << hdim_q << std::endl;
                     return fwd_result::invalid_args;
                 }
-                const ck_tile::index_t hdim_q_packed = hdim_q / packed_size_q;
                 for(ck_tile::index_t h = 0; h < nhead; ++h)
                 {
                     for(ck_tile::index_t sq = 0; sq < real_seqlen_q; ++sq)
                     {
-                        for(ck_tile::index_t d = 0; d < hdim_q_packed; ++d)
+                        for(ck_tile::index_t d = 0; d < hdim_q; d += packed_size_q)
                         {
-                            const auto q_packed = i_perm ? q_host(b_idx, h, sq + query_offset, d)
-                                                         : q_host(b_idx, sq + query_offset, h, d);
-                            const auto q_pair   = ck_tile::pk_int4_t_to_fp32x2_t(q_packed);
-                            q_host_ref(h, sq, packed_size_q * d) =
-                                ck_tile::type_convert<ck_tile::fp8_t>(q_pair.lo);
-                            q_host_ref(h, sq, packed_size_q * d + 1) =
+                            const auto q_packed  = i_perm ? q_host(b_idx, h, sq + query_offset, d)
+                                                          : q_host(b_idx, sq + query_offset, h, d);
+                            const auto q_pair    = ck_tile::pk_int4_t_to_fp32x2_t(q_packed);
+                            q_host_ref(h, sq, d) = ck_tile::type_convert<ck_tile::fp8_t>(q_pair.lo);
+                            q_host_ref(h, sq, d + 1) =
                                 ck_tile::type_convert<ck_tile::fp8_t>(q_pair.hi);
                         }
                     }
@@ -949,20 +940,19 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                                   << ", got " << hdim_q << std::endl;
                         return fwd_result::invalid_args;
                     }
-                    const ck_tile::index_t hdim_q_packed = hdim_q / packed_size_k;
                     for(ck_tile::index_t h = 0; h < nhead; ++h)
                     {
                         for(ck_tile::index_t sk = 0; sk < real_seqlen_k; ++sk)
                         {
-                            for(ck_tile::index_t d = 0; d < hdim_q_packed; ++d)
+                            for(ck_tile::index_t d = 0; d < hdim_q; d += packed_size_k)
                             {
                                 const auto k_packed =
                                     i_perm ? k_host(cache_b_idx, h / nr, sk + key_offset, d)
                                            : k_host(cache_b_idx, sk + key_offset, h / nr, d);
                                 const auto k_pair = ck_tile::pk_int4_t_to_fp32x2_t(k_packed);
-                                k_host_ref(h, sk, packed_size_k * d) =
+                                k_host_ref(h, sk, d) =
                                     ck_tile::type_convert<ck_tile::fp8_t>(k_pair.lo);
-                                k_host_ref(h, sk, packed_size_k * d + 1) =
+                                k_host_ref(h, sk, d + 1) =
                                     ck_tile::type_convert<ck_tile::fp8_t>(k_pair.hi);
                             }
                         }
@@ -1109,12 +1099,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             if(o_perm) o_host_result.ForEach([&](auto& self, auto idx) { self(idx) = o_host(b_idx, idx[0], idx[1] + query_offset, idx[2]); });
             else       o_host_result.ForEach([&](auto& self, auto idx) { self(idx) = o_host(b_idx, idx[1] + query_offset, idx[0], idx[2]); });
             // clang-format on
-            q_host_ref.savetxt("./ck_test/q_quant.txt");
-            k_host_ref.savetxt("./ck_test/k_quant.txt");
-            v_host.savetxt("./ck_test/v_quant.txt");
-
-            o_host_ref.savetxt("./ck_test/o_host_ref.txt");
-            o_host_result.savetxt("./ck_test/o_host_result.txt");
 
             auto [rtol, atol] = get_elimit<DataTypeConfig>(init_method);
             bool cur_pass     = ck_tile::check_err(o_host_result,
