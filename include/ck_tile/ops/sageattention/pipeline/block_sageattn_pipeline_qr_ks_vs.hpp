@@ -347,44 +347,38 @@ struct BlockSageAttentionPipelineQRKSVS
                 k_dram_block_window.get_window_origin(),
                 Policy::template MakeKDramTileDistribution<Problem>()); // K DRAM tile window for
                                                                         // load
-            auto s_acc_gemm              = SaccBlockTileType{};
-            const auto load_k_block_tile = [&]() {
+            auto s_acc_gemm                      = SaccBlockTileType{};
+            const auto store_k_block_tile_to_lds = [&](const auto& k_block_tile_) {
                 if constexpr(std::is_same_v<KDataType, KLdsDataType>)
-                    return load_tile(k_dram_window);
+                    store_tile(k_lds_window, tile_elementwise_in(k_element_func, k_block_tile_));
                 else
                 {
                     auto k_block_tile_tmp = make_static_distributed_tensor<KLdsDataType>(
                         k_dram_window.get_tile_distribution());
-                    auto k_src                    = load_tile(k_dram_window);
+                    using KBlockTileType          = remove_cvref_t<decltype(k_block_tile_)>;
                     constexpr index_t kPackedSize = numeric_traits<KDataType>::PackedSize;
                     static_assert(std::is_same_v<KDataType, ck_tile::pk_int4_t>);
                     static_assert(kPackedSize == 2);
                     static_assert(decltype(k_block_tile_tmp)::get_thread_buffer_size() ==
-                                  decltype(k_src)::get_thread_buffer_size() * kPackedSize);
+                                  KBlockTileType::get_thread_buffer_size() * kPackedSize);
 
-                    static_for<0, decltype(k_src)::get_thread_buffer_size(), 1>{}([&](auto i) {
+                    static_for<0, KBlockTileType::get_thread_buffer_size(), 1>{}([&](auto i) {
                         const auto k_pair =
-                            ck_tile::pk_int4_t_to_fp32x2_t(k_src.get_thread_buffer().at(i));
+                            ck_tile::pk_int4_t_to_fp32x2_t(k_block_tile_.get_thread_buffer().at(i));
                         k_block_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 0>{}) =
                             ck_tile::type_convert<KLdsDataType>(k_pair.lo);
                         k_block_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 1>{}) =
                             ck_tile::type_convert<KLdsDataType>(k_pair.hi);
                     });
-                    return k_block_tile_tmp;
+                    store_tile(k_lds_window, k_block_tile_tmp);
                 }
             };
-            const auto store_k_block_tile_to_lds = [&](const auto& k_block_tile_) {
-                if constexpr(std::is_same_v<KDataType, KLdsDataType>)
-                    store_tile(k_lds_window, tile_elementwise_in(k_element_func, k_block_tile_));
-                else
-                    store_tile(k_lds_window, k_block_tile_);
-            };
-            auto k_block_tile = load_k_block_tile();
+            auto k_block_tile = load_tile(k_dram_window);
             {
                 move_tile_window(k_dram_window, {0, kK0});
                 clear_tile(s_acc_gemm); // initialize C
                 store_k_block_tile_to_lds(k_block_tile);
-                k_block_tile = load_k_block_tile();
+                k_block_tile = load_tile(k_dram_window);
             }
 
             if constexpr(k0_loops > 2)
@@ -401,7 +395,7 @@ struct BlockSageAttentionPipelineQRKSVS
                     move_tile_window(k_dram_window, {0, kK0});
 
                     store_k_block_tile_to_lds(k_block_tile); // LDS write i + 1
-                    k_block_tile = load_k_block_tile();      // global read i + 2
+                    k_block_tile = load_tile(k_dram_window); // global read i + 2
                 });
             }
 

@@ -897,12 +897,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                 constexpr ck_tile::index_t packed_size_q =
                     ck_tile::numeric_traits<QDataType>::PackedSize;
                 static_assert(packed_size_q == 2, "i4 reference path expects 2-way packed int4.");
-                if(hdim_q % packed_size_q != 0)
-                {
-                    std::cerr << "i4 reference expects hdim_q multiple of " << packed_size_q
-                              << ", got " << hdim_q << std::endl;
-                    return fwd_result::invalid_args;
-                }
                 for(ck_tile::index_t h = 0; h < nhead; ++h)
                 {
                     for(ck_tile::index_t sq = 0; sq < real_seqlen_q; ++sq)
@@ -934,12 +928,6 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                         ck_tile::numeric_traits<KDataType>::PackedSize;
                     static_assert(packed_size_k == 2,
                                   "i4 reference path expects 2-way packed int4.");
-                    if(hdim_q % packed_size_k != 0)
-                    {
-                        std::cerr << "i4 reference expects hdim_q multiple of " << packed_size_k
-                                  << ", got " << hdim_q << std::endl;
-                        return fwd_result::invalid_args;
-                    }
                     for(ck_tile::index_t h = 0; h < nhead; ++h)
                     {
                         for(ck_tile::index_t sk = 0; sk < real_seqlen_k; ++sk)
