@@ -267,6 +267,16 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                       << hdim_q << ", packed_size=" << q_packed_size << std::endl;
             return fwd_result::invalid_args;
         }
+        if constexpr(std::is_same_v<QDataType, ck_tile::pk_int4_t>)
+        {
+            // i4x4 permute operates on 4 packed elements (=8 logical int4 values) per row.
+            if(hdim_q % 8 != 0)
+            {
+                std::cerr << "hdim_q must be divisible by 8 for pk_int4_t QDataType, got hdim_q="
+                          << hdim_q << std::endl;
+                return fwd_result::invalid_args;
+            }
+        }
     }
     if constexpr(ck_tile::is_packed_type_v<KDataType>)
     {
@@ -275,6 +285,15 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             std::cerr << "hdim_q must be divisible by packed size for KDataType, got hdim_q="
                       << hdim_q << ", packed_size=" << k_packed_size << std::endl;
             return fwd_result::invalid_args;
+        }
+        if constexpr(std::is_same_v<KDataType, ck_tile::pk_int4_t>)
+        {
+            if(hdim_q % 8 != 0)
+            {
+                std::cerr << "hdim_q must be divisible by 8 for pk_int4_t KDataType, got hdim_q="
+                          << hdim_q << std::endl;
+                return fwd_result::invalid_args;
+            }
         }
     }
 
@@ -508,8 +527,30 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             ? block_scale_seqstart_k_host.size() * sizeof(int32_t)
             : 0);
 
-    q_buf.ToDevice(q_host.data());
-    k_buf.ToDevice(k_host.data());
+    if constexpr(std::is_same_v<QDataType, ck_tile::pk_int4_t>)
+    {
+        // Device path for pk_int4_t expects 0x75316420 packing order.
+        // Keep q_host unchanged for host-side reference validation.
+        auto q_host_dev = q_host;
+        ck_tile::permute_vectors_i4x4_b(q_host_dev);
+        q_buf.ToDevice(q_host_dev.data());
+    }
+    else
+    {
+        q_buf.ToDevice(q_host.data());
+    }
+    if constexpr(std::is_same_v<KDataType, ck_tile::pk_int4_t>)
+    {
+        // Device path for pk_int4_t expects 0x75316420 packing order.
+        // Keep k_host unchanged for host-side reference validation.
+        auto k_host_dev = k_host;
+        ck_tile::permute_vectors_i4x4_b(k_host_dev);
+        k_buf.ToDevice(k_host_dev.data());
+    }
+    else
+    {
+        k_buf.ToDevice(k_host.data());
+    }
     v_buf.ToDevice(v_host.data());
     q_descale_buf.ToDevice(q_descale_host.data());
     k_descale_buf.ToDevice(k_descale_host.data());
@@ -869,10 +910,12 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                             ? seqstart_k_host[wb]
                             : seqstart_k_with_padding_host[wb]));
 
-            constexpr bool is_i4_ref_path =
-                std::is_same_v<DataTypeConfig, SageAttentionFwdI4Fp8Bf16>;
-            using QRefDataType = std::conditional_t<is_i4_ref_path, ck_tile::fp8_t, QDataType>;
-            using KRefDataType = std::conditional_t<is_i4_ref_path, ck_tile::fp8_t, KDataType>;
+            constexpr bool is_q_packed_ref_path = ck_tile::is_packed_type_v<QDataType>;
+            constexpr bool is_k_packed_ref_path = ck_tile::is_packed_type_v<KDataType>;
+            using QRefDataType =
+                std::conditional_t<is_q_packed_ref_path, ck_tile::fp8_t, QDataType>;
+            using KRefDataType =
+                std::conditional_t<is_k_packed_ref_path, ck_tile::fp8_t, KDataType>;
 
             ck_tile::HostTensor<QRefDataType> q_host_ref({nhead, real_seqlen_q, hdim_q});
             ck_tile::HostTensor<KRefDataType> k_host_ref({nhead, real_seqlen_k, hdim_q});
@@ -885,7 +928,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
 
             ck_tile::index_t nr = nhead / nhead_k;
 
-            if constexpr(!is_i4_ref_path)
+            if constexpr(!is_q_packed_ref_path)
             {
                 // clang-format off
                 if(i_perm) q_host_ref.ForEach([&](auto& self, auto i) { self(i) = q_host(b_idx, i[0], i[1] + query_offset, i[2]); });
@@ -896,7 +939,8 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             {
                 constexpr ck_tile::index_t packed_size_q =
                     ck_tile::numeric_traits<QDataType>::PackedSize;
-                static_assert(packed_size_q == 2, "i4 reference path expects 2-way packed int4.");
+                static_assert(std::is_same_v<QDataType, ck_tile::pk_int4_t>);
+                static_assert(packed_size_q == 2, "packed Q reference path expects 2-way packed.");
                 for(ck_tile::index_t h = 0; h < nhead; ++h)
                 {
                     for(ck_tile::index_t sq = 0; sq < real_seqlen_q; ++sq)
@@ -915,7 +959,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             }
 
             {
-                if constexpr(!is_i4_ref_path)
+                if constexpr(!is_k_packed_ref_path)
                 {
                     // clang-format off
                     if(i_perm) k_host_ref.ForEach([&](auto& self, auto i) { self(i) = k_host(cache_b_idx, i[0] / nr, i[1] + key_offset, i[2]); });
@@ -926,8 +970,9 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                 {
                     constexpr ck_tile::index_t packed_size_k =
                         ck_tile::numeric_traits<KDataType>::PackedSize;
+                    static_assert(std::is_same_v<KDataType, ck_tile::pk_int4_t>);
                     static_assert(packed_size_k == 2,
-                                  "i4 reference path expects 2-way packed int4.");
+                                  "packed K reference path expects 2-way packed.");
                     for(ck_tile::index_t h = 0; h < nhead; ++h)
                     {
                         for(ck_tile::index_t sk = 0; sk < real_seqlen_k; ++sk)

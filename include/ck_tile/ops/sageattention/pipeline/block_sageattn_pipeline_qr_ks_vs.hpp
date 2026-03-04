@@ -258,18 +258,27 @@ struct BlockSageAttentionPipelineQRKSVS
             {
                 auto q_tile_tmp = make_static_distributed_tensor<QGemmDataType>(
                     Policy::template MakeQRegTileDistribution<Problem>());
-                constexpr index_t kPackedSize = numeric_traits<QDataType>::PackedSize;
+                constexpr index_t kPackedSize  = numeric_traits<QDataType>::PackedSize;
+                constexpr index_t kUnaryOpSize = 8;
                 static_assert(std::is_same_v<QDataType, ck_tile::pk_int4_t>);
                 static_assert(kPackedSize == 2);
                 static_assert(decltype(q_tile_tmp)::get_thread_buffer_size() ==
                               decltype(q)::get_thread_buffer_size() * kPackedSize);
+                static_assert(decltype(q_tile_tmp)::get_thread_buffer_size() % kUnaryOpSize == 0);
 
-                static_for<0, decltype(q)::get_thread_buffer_size(), 1>{}([&](auto i) {
-                    const auto q_pair = ck_tile::pk_int4_t_to_fp32x2_t(q.get_thread_buffer().at(i));
-                    q_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 0>{}) =
-                        ck_tile::type_convert<QGemmDataType>(q_pair.lo);
-                    q_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 1>{}) =
-                        ck_tile::type_convert<QGemmDataType>(q_pair.hi);
+                using RawQType      = typename QDataType::type;
+                using SrcVectorType = ext_vector_t<RawQType, kUnaryOpSize / kPackedSize>;
+                using DstVectorType = ext_vector_t<QGemmDataType, kUnaryOpSize>;
+                constexpr index_t kVecSize =
+                    decltype(q_tile_tmp)::get_thread_buffer_size() / kUnaryOpSize;
+                static_assert(decltype(q)::get_thread_buffer_size() ==
+                              kVecSize * (kUnaryOpSize / kPackedSize));
+
+                const element_wise::PassThroughPack8 pass_through_pack8{};
+                static_for<0, kVecSize, 1>{}([&](auto i) {
+                    pass_through_pack8(
+                        q_tile_tmp.get_thread_buffer().template get_as<DstVectorType>()(i),
+                        q.get_thread_buffer().template get_as<SrcVectorType>()[i]);
                 });
                 return q_tile_tmp;
             }
@@ -355,20 +364,30 @@ struct BlockSageAttentionPipelineQRKSVS
                 {
                     auto k_block_tile_tmp = make_static_distributed_tensor<KLdsDataType>(
                         k_dram_window.get_tile_distribution());
-                    using KBlockTileType          = remove_cvref_t<decltype(k_block_tile_)>;
-                    constexpr index_t kPackedSize = numeric_traits<KDataType>::PackedSize;
+                    using KBlockTileType           = remove_cvref_t<decltype(k_block_tile_)>;
+                    constexpr index_t kPackedSize  = numeric_traits<KDataType>::PackedSize;
+                    constexpr index_t kUnaryOpSize = 8;
                     static_assert(std::is_same_v<KDataType, ck_tile::pk_int4_t>);
                     static_assert(kPackedSize == 2);
                     static_assert(decltype(k_block_tile_tmp)::get_thread_buffer_size() ==
                                   KBlockTileType::get_thread_buffer_size() * kPackedSize);
+                    static_assert(
+                        decltype(k_block_tile_tmp)::get_thread_buffer_size() % kUnaryOpSize == 0);
 
-                    static_for<0, KBlockTileType::get_thread_buffer_size(), 1>{}([&](auto i) {
-                        const auto k_pair =
-                            ck_tile::pk_int4_t_to_fp32x2_t(k_block_tile_.get_thread_buffer().at(i));
-                        k_block_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 0>{}) =
-                            ck_tile::type_convert<KLdsDataType>(k_pair.lo);
-                        k_block_tile_tmp.get_thread_buffer().at(number<kPackedSize * i + 1>{}) =
-                            ck_tile::type_convert<KLdsDataType>(k_pair.hi);
+                    using RawKType      = typename KDataType::type;
+                    using SrcVectorType = ext_vector_t<RawKType, kUnaryOpSize / kPackedSize>;
+                    using DstVectorType = ext_vector_t<KLdsDataType, kUnaryOpSize>;
+                    constexpr index_t kVecSize =
+                        decltype(k_block_tile_tmp)::get_thread_buffer_size() / kUnaryOpSize;
+                    static_assert(KBlockTileType::get_thread_buffer_size() ==
+                                  kVecSize * (kUnaryOpSize / kPackedSize));
+
+                    const element_wise::PassThroughPack8 pass_through_pack8{};
+                    static_for<0, kVecSize, 1>{}([&](auto i) {
+                        pass_through_pack8(
+                            k_block_tile_tmp.get_thread_buffer().template get_as<DstVectorType>()(
+                                i),
+                            k_block_tile_.get_thread_buffer().template get_as<SrcVectorType>()[i]);
                     });
                     store_tile(k_lds_window, k_block_tile_tmp);
                 }
