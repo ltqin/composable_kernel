@@ -257,6 +257,12 @@ fwd_result sageattn_fwd_run(mode_enum mode,
         ck_tile::is_packed_type_v<QDataType> ? ck_tile::numeric_traits<QDataType>::PackedSize : 1;
     constexpr ck_tile::index_t k_packed_size =
         ck_tile::is_packed_type_v<KDataType> ? ck_tile::numeric_traits<KDataType>::PackedSize : 1;
+    constexpr bool is_q_i4 = std::is_same_v<QDataType, ck_tile::pk_int4_t>;
+    constexpr bool is_k_i4 = std::is_same_v<KDataType, ck_tile::pk_int4_t>;
+    // Keep i4x4 permutation only for single-sided int4 path.
+    // When both Q/K are int4, their common lane mapping remains aligned for QK GEMM.
+    constexpr bool need_q_i4_permute        = is_q_i4 && !is_k_i4;
+    constexpr bool need_k_i4_permute        = is_k_i4 && !is_q_i4;
     const ck_tile::index_t hdim_q_storage_q = hdim_q / q_packed_size;
     const ck_tile::index_t hdim_q_storage_k = hdim_q / k_packed_size;
     if constexpr(ck_tile::is_packed_type_v<QDataType>)
@@ -267,7 +273,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                       << hdim_q << ", packed_size=" << q_packed_size << std::endl;
             return fwd_result::invalid_args;
         }
-        if constexpr(std::is_same_v<QDataType, ck_tile::pk_int4_t>)
+        if constexpr(need_q_i4_permute)
         {
             // i4x4 permute operates on 4 packed elements (=8 logical int4 values) per row.
             if(hdim_q % 8 != 0)
@@ -286,7 +292,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                       << hdim_q << ", packed_size=" << k_packed_size << std::endl;
             return fwd_result::invalid_args;
         }
-        if constexpr(std::is_same_v<KDataType, ck_tile::pk_int4_t>)
+        if constexpr(need_k_i4_permute)
         {
             if(hdim_q % 8 != 0)
             {
@@ -527,7 +533,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
             ? block_scale_seqstart_k_host.size() * sizeof(int32_t)
             : 0);
 
-    if constexpr(std::is_same_v<QDataType, ck_tile::pk_int4_t>)
+    if constexpr(need_q_i4_permute)
     {
         // Device path for pk_int4_t expects 0x75316420 packing order.
         // Keep q_host unchanged for host-side reference validation.
@@ -539,7 +545,7 @@ fwd_result sageattn_fwd_run(mode_enum mode,
     {
         q_buf.ToDevice(q_host.data());
     }
-    if constexpr(std::is_same_v<KDataType, ck_tile::pk_int4_t>)
+    if constexpr(need_k_i4_permute)
     {
         // Device path for pk_int4_t expects 0x75316420 packing order.
         // Keep k_host unchanged for host-side reference validation.
