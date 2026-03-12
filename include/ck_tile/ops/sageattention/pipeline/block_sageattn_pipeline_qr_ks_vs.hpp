@@ -288,29 +288,37 @@ struct BlockSageAttentionPipelineQRKSVS
         do
         {
             float k_descale = 1.0f;
-            if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
-                         QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP)
+            if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE)
             {
-                // K and V share the same seqlen_k position within a block
                 const index_t kv_idx = (seqlen_k_start + i_total_loops * kN0) / block_scale_size_k;
                 k_descale            = k_descale_ptr[kv_idx];
             }
+            float k_scales_perwarp[2] = {};
+            if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP)
+            {
+                const index_t kv_idx = (seqlen_k_start + i_total_loops * kN0) / block_scale_size_k;
+                k_scales_perwarp[0]  = k_descale_ptr[kv_idx];
+                k_scales_perwarp[1]  = k_descale_ptr[kv_idx + 1];
+            }
             // PERTHREAD mode: Pre-load K scales to registers before GEMM (only when needed)
-            float k_scales_reg[2] = {}; // Register array for K scales
+            float k_scales_reg[4] = {};
             if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
             {
-                // Calculate K scale range for this loop iteration
                 const index_t k_global_start = seqlen_k_start + i_total_loops * kN0;
                 index_t k_scale_start_idx    = k_global_start / block_scale_size_k;
                 if(thread_idx)
                 {
                     k_scales_reg[0] = k_descale_ptr[k_scale_start_idx + 1];
                     k_scales_reg[1] = k_descale_ptr[k_scale_start_idx + 3];
+                    k_scales_reg[2] = k_descale_ptr[k_scale_start_idx + 5];
+                    k_scales_reg[3] = k_descale_ptr[k_scale_start_idx + 7];
                 }
                 else
                 {
                     k_scales_reg[0] = k_descale_ptr[k_scale_start_idx + 0];
                     k_scales_reg[1] = k_descale_ptr[k_scale_start_idx + 2];
+                    k_scales_reg[2] = k_descale_ptr[k_scale_start_idx + 4];
+                    k_scales_reg[3] = k_descale_ptr[k_scale_start_idx + 6];
                 }
             }
 
@@ -385,28 +393,25 @@ struct BlockSageAttentionPipelineQRKSVS
                 }
             }();
 
-            // dequant: create element function that combines q_descale and k_descale
+            // dequant: combine q_descale (in s_acc_element_func) with k_descale
             auto s_acc_element_func_ = [&]() {
-                if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE ||
-                             QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP)
+                if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::BLOCKSCALE)
                 {
-                    // BLOCKSCALE/PERWARP: s_acc_element_func contains q_descale (per-tile or
-                    // per-warp). PERTHREAD uses per-element scaling, so not included here.
                     return s_acc_element_func * k_descale;
                 }
                 else
                     return s_acc_element_func;
             }();
 
-            // PERTHREAD dequant: Apply per-thread scales to s_acc elements
-            // Each thread processes elements in groups of 16, using pre-loaded combined scales
             if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
             {
-                float combined_scales_reg[2] = {}; // Pre-computed q_descale_value * k_scale
-                combined_scales_reg[0]     = q_descale_value * k_scales_reg[0]; // Pre-compute once
-                combined_scales_reg[1]     = q_descale_value * k_scales_reg[1]; // Pre-compute once
-                int count                  = 0;
-                constexpr auto s_acc_spans = decltype(s_acc)::get_distributed_spans();
+                float combined_scales_reg[4] = {};
+                combined_scales_reg[0]       = q_descale_value * k_scales_reg[0];
+                combined_scales_reg[1]       = q_descale_value * k_scales_reg[1];
+                combined_scales_reg[2]       = q_descale_value * k_scales_reg[2];
+                combined_scales_reg[3]       = q_descale_value * k_scales_reg[3];
+                int count                    = 0;
+                constexpr auto s_acc_spans   = decltype(s_acc)::get_distributed_spans();
                 sweep_tile_span(s_acc_spans[number<0>{}], [&](auto idx0) {
                     sweep_tile_span(s_acc_spans[number<1>{}], [&](auto idx1) {
                         constexpr auto i_j_idx     = make_tuple(idx0, idx1);
@@ -415,6 +420,22 @@ struct BlockSageAttentionPipelineQRKSVS
 
                         s_acc(i_j_idx) *= combined_scale;
 
+                        count++;
+                    });
+                });
+            }
+            else if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERWARP)
+            {
+                float combined_scales_reg[2] = {};
+                combined_scales_reg[0]       = s_acc_element_func(k_scales_perwarp[0]);
+                combined_scales_reg[1]       = s_acc_element_func(k_scales_perwarp[1]);
+                int count                    = 0;
+                constexpr auto s_acc_spans   = decltype(s_acc)::get_distributed_spans();
+                sweep_tile_span(s_acc_spans[number<0>{}], [&](auto idx0) {
+                    sweep_tile_span(s_acc_spans[number<1>{}], [&](auto idx1) {
+                        constexpr auto i_j_idx  = make_tuple(idx0, idx1);
+                        const index_t scale_idx = count >> 5;
+                        s_acc(i_j_idx) *= combined_scales_reg[scale_idx];
                         count++;
                     });
                 });

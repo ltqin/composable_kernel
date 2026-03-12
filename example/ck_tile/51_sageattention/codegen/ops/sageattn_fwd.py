@@ -783,8 +783,7 @@ class KernelComponentFactoryGfx9(CompatibilityRuleFactoryGfx9):
             or dtype in cls._DT_I8FP8BF16
         ):
             return {
-                ( 64,  64) : [SageAttnFwdTileSize(128,  64,  32,  64,  32,  64,  2, 1, 1,  2, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
-                (128, 128) : [SageAttnFwdTileSize(128,  64,  32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
+                (128, 128) : [SageAttnFwdTileSize(128,  128, 32, 128,  32, 128,  4, 1, 1,  4, 1, 1,  32, 32, 32,  32, 32, 32,  -1)],
             }  # fmt: skip
         else:
             raise ValueError(f"unsupported dtype={dtype}")

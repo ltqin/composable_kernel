@@ -201,8 +201,9 @@ fwd_result sageattn_fwd_run(mode_enum mode,
                                                  : (qscale.type == quant_scale_enum::perthread)
                                                      ? 4
                                                      : 128;
-    const ck_tile::index_t block_scale_size_k_ =
-        (qscale.type == quant_scale_enum::perthread) ? 16 : 64;
+    const ck_tile::index_t block_scale_size_k_ = (qscale.type == quant_scale_enum::perthread) ? 16
+                                                 : (qscale.type == quant_scale_enum::perwarp) ? 64
+                                                                                              : 128;
 
     const auto seqstart_q_host              = to_seqstarts(seqlen_qs);
     const auto seqstart_k_host              = to_seqstarts(seqlen_ks);
