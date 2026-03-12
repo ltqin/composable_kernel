@@ -567,22 +567,16 @@ struct BlockSageAttentionPipelineQRKSVSAsync
             sweep_tile_span(o_spans[number<0>{}], [&](auto idx0) {
                 constexpr auto i_idx = make_tuple(idx0);
 
-                // Conditional Rescale: only rescale if max changed
-                const auto m_new       = get_validated_m(m[i_idx]);
-                const bool max_changed = (m_old[i_idx] != m_new);
-
-                if(max_changed)
-                {
-                    // logits_soft_cap is always disabled
-                    auto row_max   = scale_s * m_new;
-                    const auto tmp = exp2(scale_s * m_old[i_idx] - row_max);
-                    // Rescale l and o_acc
-                    l(i_idx) *= tmp;
-                    sweep_tile_span(o_spans[number<1>{}], [&](auto idx1) {
-                        constexpr auto i_j_idx = make_tuple(idx0, idx1);
-                        o_acc(i_j_idx) *= tmp;
-                    });
-                }
+                const auto m_new = get_validated_m(m[i_idx]);
+                // logits_soft_cap is always disabled
+                auto row_max   = scale_s * m_new;
+                const auto tmp = exp2(scale_s * m_old[i_idx] - row_max);
+                // Rescale l and o_acc
+                l(i_idx) *= tmp;
+                sweep_tile_span(o_spans[number<1>{}], [&](auto idx1) {
+                    constexpr auto i_j_idx = make_tuple(idx0, idx1);
+                    o_acc(i_j_idx) *= tmp;
+                });
 
                 // Always accumulate new contribution
                 l(i_idx) += rowsum_p[i_idx];
