@@ -240,11 +240,6 @@ struct BlockSageAttentionPipelineQRKSVS
             }
         }
 
-        auto k_dram_block_window =
-            make_tile_window(k_dram_block_window_tmp.get_bottom_tensor_view(),
-                             k_dram_block_window_tmp.get_window_lengths(),
-                             {0, 0});
-
         auto v_dram_window =
             make_tile_window(v_dram_block_window_tmp.get_bottom_tensor_view(),
                              v_dram_block_window_tmp.get_window_lengths(),
@@ -302,16 +297,14 @@ struct BlockSageAttentionPipelineQRKSVS
             constexpr index_t WarpGemm0K   = WarpGemm0::WarpGemmAttribute::Impl::kK;
             constexpr index_t NumMfmaInsts = (kM0 / WarpGemm0M) * (kN0 / WarpGemm0N) *
                                              (kK0 / WarpGemm0K) / (Gemm0MWarp * Gemm0NWarp);
-            if constexpr(get_warp_size() == 64 && kQKHeaddim == 256)
+            if constexpr(get_warp_size() == 64 && kQKHeaddim == 128)
             {
-                static_assert(NumMfmaInsts % 8 == 0);
-                static_for<0, NumMfmaInsts / 8, 1>{}([&](auto) {
+                static_assert(NumMfmaInsts % 4 == 0);
+                static_for<0, NumMfmaInsts / 4, 1>{}([&](auto) {
                     __builtin_amdgcn_sched_group_barrier(DS_READ, 2, 0); // DS read
                     __builtin_amdgcn_sched_group_barrier(MFMA, 2, 0);    // MFMA
                     __builtin_amdgcn_sched_group_barrier(DS_READ, 1, 0); // DS read
                     __builtin_amdgcn_sched_group_barrier(MFMA, 2, 0);    // MFMA
-                    __builtin_amdgcn_sched_group_barrier(DS_READ, 1, 0); // DS read
-                    __builtin_amdgcn_sched_group_barrier(MFMA, 4, 0);    // MFMA
                 });
             }
         };
@@ -319,6 +312,14 @@ struct BlockSageAttentionPipelineQRKSVS
         static_assert(2 <= k0_loops);
         static_assert(1 <= k1_loops);
         index_t thread_idx = (threadIdx.x % 64) / 32;
+        // Carry first K tile prefetch across outer loops so we can issue
+        // the next-block K load before current gemm_1 tail.
+        auto k_prefetch_window =
+            make_tile_window(k_dram_block_window_tmp.get_bottom_tensor_view(),
+                             k_dram_block_window_tmp.get_window_lengths(),
+                             {0, 0},
+                             Policy::template MakeKDramTileDistribution<Problem>());
+        auto k_block_tile_prefetch = load_tile(k_prefetch_window);
         // main loop
         do
         {
@@ -351,9 +352,9 @@ struct BlockSageAttentionPipelineQRKSVS
 
             // STAGE 1, QK gemm
             auto k_dram_window = make_tile_window(
-                k_dram_block_window.get_bottom_tensor_view(),
-                k_dram_block_window.get_window_lengths(),
-                k_dram_block_window.get_window_origin(),
+                k_prefetch_window.get_bottom_tensor_view(),
+                k_prefetch_window.get_window_lengths(),
+                k_prefetch_window.get_window_origin(),
                 Policy::template MakeKDramTileDistribution<Problem>()); // K DRAM tile window for
                                                                         // load
             auto s_acc_gemm                      = SaccBlockTileType{};
@@ -392,7 +393,7 @@ struct BlockSageAttentionPipelineQRKSVS
                     store_tile(k_lds_window, k_block_tile_tmp);
                 }
             };
-            auto k_block_tile = load_tile(k_dram_window);
+            auto k_block_tile = k_block_tile_prefetch;
             {
                 move_tile_window(k_dram_window, {0, kK0});
                 clear_tile(s_acc_gemm); // initialize C
@@ -494,7 +495,7 @@ struct BlockSageAttentionPipelineQRKSVS
             // STAGE 2, scale_s, mask, softmax
             if constexpr(kPadSeqLenK || FmhaMask::IsMasking)
             {
-                const auto k_origin      = k_dram_block_window.get_window_origin();
+                const auto k_origin      = k_prefetch_window.get_window_origin();
                 bool need_perpixel_check = mask.IsEdgeTile(q_origin.at(number<0>{}),
                                                            k_origin.at(number<0>{}),
                                                            number<kM0>{},
@@ -657,8 +658,15 @@ struct BlockSageAttentionPipelineQRKSVS
                     move_tile_window(v_dram_window, {0, kK1});
                 });
             }
-            // move K tile windows
-            move_tile_window(k_dram_block_window, {kN0, 0});
+            // move K tile window to next outer block
+            move_tile_window(k_prefetch_window, {kN0, 0});
+            // Prefetch next outer-loop K block before current gemm_1 tail.
+            // Guard the final loop to avoid out-of-range reads.
+            const bool has_next_outer_loop = (i_total_loops + 1) < num_total_loop;
+            if(has_next_outer_loop)
+            {
+                k_block_tile_prefetch = load_tile(k_prefetch_window);
+            }
             // tail
             {
                 block_sync_lds();
