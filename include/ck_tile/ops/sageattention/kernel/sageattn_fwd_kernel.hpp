@@ -1347,28 +1347,28 @@ struct SageAttnFwdKernel
                 const size_t idx           = tile_base_idx + wave_id;
                 const float q_descale      = q_descale_ptr[idx];
 
-                return SageAttnPipeline{}(
-                    q_dram_window,
-                    identity{}, // q_element_func
-                    k_dram_window,
-                    identity{}, // k_element_func
-                    v_dram_window,
-                    identity{},               // v_element_func
-                    scales<float>(q_descale), // s_acc_element_func - per-warp q_descale
-                    identity{},               // p_compute_element_func - No scaling (done in exp2)
-                    identity{}, // o_acc_element_func - No dequant (canceled by rowsum)
-                    mask,
-                    position_encoding,
-                    kargs.scale_s,
-                    variant,
-                    variant_params,
-                    block_indices,
-                    smem_ptr,
-                    nullptr,
-                    k_descale_ptr,
-                    v_descale_ptr,
-                    0,
-                    kargs.block_scale_size_k);
+                return SageAttnPipeline{}(q_dram_window,
+                                          identity{}, // q_element_func
+                                          k_dram_window,
+                                          identity{}, // k_element_func
+                                          v_dram_window,
+                                          identity{}, // v_element_func
+                                          identity{}, // s_acc_element_func
+                                          identity{}, // p_compute_element_func
+                                          identity{}, // o_acc_element_func
+                                          mask,
+                                          position_encoding,
+                                          kargs.scale_s,
+                                          variant,
+                                          variant_params,
+                                          block_indices,
+                                          smem_ptr,
+                                          nullptr,
+                                          k_descale_ptr,
+                                          v_descale_ptr,
+                                          0,
+                                          kargs.block_scale_size_k,
+                                          q_descale);
             }
             else if constexpr(QScaleEnum == BlockSageAttentionQuantScaleEnum::PERTHREAD)
             {
