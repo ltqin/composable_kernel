@@ -733,7 +733,7 @@ class KernelComponentFactory:
                 kv_lookup_table,
             ) in itertools.product(
                 ["t", "f"],
-                ["pertensor", "kv_blockscale"],
+                ["pertensor", "kv_blockscale", "qpertoken_perhead_kpertensor_vpertensor"],
                 get_mask_map(mask_impl).keys(),
                 ["no"],
                 ["t", "f"],

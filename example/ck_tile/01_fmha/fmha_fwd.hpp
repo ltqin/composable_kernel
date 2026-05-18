@@ -671,6 +671,11 @@ struct fmha_batch_prefill_args
     // v_descale_ptr: [num_block, num_kv_head] - points to v block descale
     ck_tile::index_t nblock_stride_kv_block_descale = 0; // Stride along num_block dimension
     ck_tile::index_t nhead_stride_kv_block_descale  = 0; // Stride along num_kv_head dimension
+
+    // QPERTOKEN_PERHEAD_KPERTENSOR_VPERTENSOR: per-token per-head Q descale
+    // q_descale_ptr is 3D when this mode is active: [batch, num_head_q, max_seqlen_q_pad]
+    ck_tile::index_t nhead_stride_q_descale = 0; // Stride along num_head dimension
+    ck_tile::index_t batch_stride_q_descale = 0; // Stride along batch dimension
 };
 
 // Selects the KV-cache load mode for a batch-prefill dispatch arm.
