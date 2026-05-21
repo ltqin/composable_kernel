@@ -1277,12 +1277,18 @@ struct FmhaBatchPrefillWithPagedKVCacheKernel
                         static_cast<long_index_t>(i_batch) * kargs.batch_stride_q_descale +
                         static_cast<long_index_t>(i_nhead) * kargs.nhead_stride_q_descale;
 
-                    // kBlockSq=1: per-token scale, get scale for tile origin token
-                    const index_t q_scale_idx     = i_m0; // Token index at tile origin
+                    // Calculate per-thread Q scale index (per-token: kBlockSq=1)
+                    // Reference: sageattention kernel sageattn_fwd_kernel.hpp line 954-963
+                    using FmhaShape                  = typename FmhaPipeline::BlockFmhaShape;
+                    constexpr index_t kWarpSize      = ck_tile::get_warp_size();
+                    constexpr index_t kGemm0MPerWarp = FmhaShape::Gemm0WarpTile::at(number<0>{});
+                    const index_t wave_id = __builtin_amdgcn_readfirstlane(threadIdx.x / kWarpSize);
+                    const index_t q_row_raw =
+                        i_m0 + wave_id * kGemm0MPerWarp + threadIdx.x % kGemm0MPerWarp;
                     const index_t max_q_scale_idx = kargs.seqlen_q > 0 ? kargs.seqlen_q - 1 : 0;
-                    const index_t q_scale_idx_clamped =
-                        q_scale_idx < max_q_scale_idx ? q_scale_idx : max_q_scale_idx;
-                    const float q_descale_value = q_descale_ptr[q_scale_idx_clamped];
+                    const index_t q_scale_idx =
+                        q_row_raw < max_q_scale_idx ? q_row_raw : max_q_scale_idx;
+                    const float q_descale_value = q_descale_ptr[q_scale_idx];
 
                     float k_descale = *(reinterpret_cast<const float*>(kargs.k_descale_ptr));
                     return kargs.scale_s * q_descale_value * k_descale;
