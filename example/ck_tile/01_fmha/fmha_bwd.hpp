@@ -21,7 +21,8 @@
 
 // Helper for graph capture: stores closure data (never deleted - bounded leak)
 namespace {
-struct FmhaBwdGraphClosure {
+struct FmhaBwdGraphClosure
+{
     void* pin_w_ptr;
     const int* seqstart_q_ptr;
     const int* seqstart_k_ptr;
@@ -29,18 +30,24 @@ struct FmhaBwdGraphClosure {
     // The launcher object is destroyed after graph capture.
     std::function<void(void*, const int*, const int*)> pack_fn_copy;
 
-    static void invoke(void* ud) {
+    static void invoke(void* ud)
+    {
         auto* data = static_cast<FmhaBwdGraphClosure*>(ud);
-        try {
+        try
+        {
             data->pack_fn_copy(data->pin_w_ptr, data->seqstart_q_ptr, data->seqstart_k_ptr);
-        } catch(const std::exception& e) {
+        }
+        catch(const std::exception& e)
+        {
             std::cerr << "fmha_bwd_launcher: pack_workspace_host threw: " << e.what() << '\n';
-        } catch(...) {
+        }
+        catch(...)
+        {
             std::cerr << "fmha_bwd_launcher: pack_workspace_host threw unknown\n";
         }
     }
 };
-}
+} // namespace
 
 struct FmhaBwdFp32
 {
@@ -661,14 +668,14 @@ struct fmha_bwd_launcher
 
         // Allocate pinned buffer (with extra aligned space for closure in graph mode)
         const size_t data_size = 2 * seqstart_bytes + host_ws_size_;
-        size_t total_bytes = data_size;
+        size_t total_bytes     = data_size;
         if(is_graph_capture)
         {
             // Align data_size up to closure alignment, then add closure size
             constexpr size_t closure_align = alignof(FmhaBwdGraphClosure);
-            constexpr size_t closure_size = sizeof(FmhaBwdGraphClosure);
-            const size_t aligned_data = (data_size + closure_align - 1) & ~(closure_align - 1);
-            total_bytes = aligned_data + closure_size;
+            constexpr size_t closure_size  = sizeof(FmhaBwdGraphClosure);
+            const size_t aligned_data      = (data_size + closure_align - 1) & ~(closure_align - 1);
+            total_bytes                    = aligned_data + closure_size;
         }
         auto pin_base = pinned_host_alloc(total_bytes);
 
@@ -702,15 +709,15 @@ struct fmha_bwd_launcher
             // === GRAPH CAPTURE MODE ===
             // Use placement new to construct closure in pinned buffer (with proper alignment).
             constexpr size_t closure_align = alignof(FmhaBwdGraphClosure);
-            const size_t aligned_offset = (data_size + closure_align - 1) & ~(closure_align - 1);
-            void* closure_addr = base + aligned_offset;
+            const size_t aligned_offset    = (data_size + closure_align - 1) & ~(closure_align - 1);
+            void* closure_addr             = base + aligned_offset;
 
             // Construct closure in-place (never destructed - bounded leak)
-            auto* graph_data = new (closure_addr) FmhaBwdGraphClosure{
+            auto* graph_data = new(closure_addr) FmhaBwdGraphClosure{
                 pin_w,
                 seqstart_q_pinned,
                 seqstart_k_pinned,
-                pack_workspace_host_  // COPY the std::function (launcher object will be destroyed)
+                pack_workspace_host_ // COPY the std::function (launcher object will be destroyed)
             };
 
             HIP_CHECK_ERROR(hipLaunchHostFunc(stream, FmhaBwdGraphClosure::invoke, graph_data));
@@ -723,8 +730,8 @@ struct fmha_bwd_launcher
         else
         {
             // === NORMAL MODE (no graph capture) ===
-            auto pack_closure_unique = std::make_unique<std::function<void()>>(
-                [=, fn = pack_workspace_host_]() {
+            auto pack_closure_unique =
+                std::make_unique<std::function<void()>>([=, fn = pack_workspace_host_]() {
                     fn(pin_w, seqstart_q_pinned, seqstart_k_pinned);
                 });
 
@@ -739,8 +746,8 @@ struct fmha_bwd_launcher
                     }
                     catch(const std::exception& e)
                     {
-                        std::cerr << "fmha_bwd_launcher: pack_workspace_host threw: "
-                                  << e.what() << '\n';
+                        std::cerr << "fmha_bwd_launcher: pack_workspace_host threw: " << e.what()
+                                  << '\n';
                     }
                     catch(...)
                     {
