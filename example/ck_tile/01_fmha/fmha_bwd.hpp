@@ -17,6 +17,30 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
+
+// Helper for graph capture: stores closure data (never deleted - bounded leak)
+namespace {
+struct FmhaBwdGraphClosure {
+    void* pin_w_ptr;
+    const int* seqstart_q_ptr;
+    const int* seqstart_k_ptr;
+    // MUST be a COPY of pack_workspace_host_, not a reference!
+    // The launcher object is destroyed after graph capture.
+    std::function<void(void*, const int*, const int*)> pack_fn_copy;
+
+    static void invoke(void* ud) {
+        auto* data = static_cast<FmhaBwdGraphClosure*>(ud);
+        try {
+            data->pack_fn_copy(data->pin_w_ptr, data->seqstart_q_ptr, data->seqstart_k_ptr);
+        } catch(const std::exception& e) {
+            std::cerr << "fmha_bwd_launcher: pack_workspace_host threw: " << e.what() << '\n';
+        } catch(...) {
+            std::cerr << "fmha_bwd_launcher: pack_workspace_host threw unknown\n";
+        }
+    }
+};
+}
 
 struct FmhaBwdFp32
 {
@@ -629,8 +653,24 @@ struct fmha_bwd_launcher
         // Allocate pinned host staging first: if it throws we haven't issued any
         // stream work yet, leaving the workspace cleanly un-prepared.
         const size_t seqstart_bytes = traits_.is_group_mode ? sizeof(int) * (traits_.batch + 1) : 0;
-        const size_t total_bytes    = 2 * seqstart_bytes + host_ws_size_;
-        auto pin_base               = pinned_host_alloc(total_bytes);
+
+        // Check if we're in graph capture mode
+        hipStreamCaptureStatus capture_status;
+        HIP_CHECK_ERROR(hipStreamIsCapturing(stream, &capture_status));
+        const bool is_graph_capture = (capture_status == hipStreamCaptureStatusActive);
+
+        // Allocate pinned buffer (with extra aligned space for closure in graph mode)
+        const size_t data_size = 2 * seqstart_bytes + host_ws_size_;
+        size_t total_bytes = data_size;
+        if(is_graph_capture)
+        {
+            // Align data_size up to closure alignment, then add closure size
+            constexpr size_t closure_align = alignof(FmhaBwdGraphClosure);
+            constexpr size_t closure_size = sizeof(FmhaBwdGraphClosure);
+            const size_t aligned_data = (data_size + closure_align - 1) & ~(closure_align - 1);
+            total_bytes = aligned_data + closure_size;
+        }
+        auto pin_base = pinned_host_alloc(total_bytes);
 
         if(needs_zero_dq_acc_ && workspace_size > host_ws_size_)
             HIP_CHECK_ERROR(hipMemsetAsync(static_cast<char*>(device_ws_ptr) + host_ws_size_,
@@ -657,43 +697,67 @@ struct fmha_bwd_launcher
                 pin_k, seqstart_k_dev, seqstart_bytes, hipMemcpyDeviceToHost, stream));
         }
 
-        auto pack_closure = std::make_unique<std::function<void()>>(
-            [=, fn = pack_workspace_host_]() { fn(pin_w, seqstart_q_pinned, seqstart_k_pinned); });
-        // Callback runs on the HIP driver helper thread across a C ABI boundary;
-        // any exception escaping it would call std::terminate.
-        HIP_CHECK_ERROR(hipLaunchHostFunc(
-            stream,
-            [](void* ud) {
-                std::unique_ptr<std::function<void()>> c{static_cast<std::function<void()>*>(ud)};
-                try
-                {
-                    (*c)();
-                }
-                catch(const std::exception& e)
-                {
-                    // The H2D queued after this callback will copy indeterminate
-                    // metadata to device and the kernel will produce wrong results;
-                    // unlikely in practice since pack_workspace_host_ only throws on
-                    // precondition violations.
-                    std::cerr << "fmha_bwd_launcher: pack_workspace_host threw: " << e.what()
-                              << '\n';
-                }
-                catch(...)
-                {
-                    std::cerr << "fmha_bwd_launcher: pack_workspace_host threw unknown\n";
-                }
-            },
-            pack_closure.get()));
-        // Ownership transferred to the callback only after a successful launch.
-        pack_closure.release();
+        if(is_graph_capture)
+        {
+            // === GRAPH CAPTURE MODE ===
+            // Use placement new to construct closure in pinned buffer (with proper alignment).
+            constexpr size_t closure_align = alignof(FmhaBwdGraphClosure);
+            const size_t aligned_offset = (data_size + closure_align - 1) & ~(closure_align - 1);
+            void* closure_addr = base + aligned_offset;
+
+            // Construct closure in-place (never destructed - bounded leak)
+            auto* graph_data = new (closure_addr) FmhaBwdGraphClosure{
+                pin_w,
+                seqstart_q_pinned,
+                seqstart_k_pinned,
+                pack_workspace_host_  // COPY the std::function (launcher object will be destroyed)
+            };
+
+            HIP_CHECK_ERROR(hipLaunchHostFunc(stream, FmhaBwdGraphClosure::invoke, graph_data));
+
+            // DON'T call schedule_pin_staging_release() - would be captured and cause double-free.
+            // DON'T move/modify pin_base - it's owned by the caller who must keep it alive for
+            // the graph's lifetime. The closure embedded in pin_base references pin_w/seqstart
+            // pointers which remain valid as long as pin_base exists.
+        }
+        else
+        {
+            // === NORMAL MODE (no graph capture) ===
+            auto pack_closure_unique = std::make_unique<std::function<void()>>(
+                [=, fn = pack_workspace_host_]() {
+                    fn(pin_w, seqstart_q_pinned, seqstart_k_pinned);
+                });
+
+            HIP_CHECK_ERROR(hipLaunchHostFunc(
+                stream,
+                [](void* ud) {
+                    std::unique_ptr<std::function<void()>> c{
+                        static_cast<std::function<void()>*>(ud)};
+                    try
+                    {
+                        (*c)();
+                    }
+                    catch(const std::exception& e)
+                    {
+                        std::cerr << "fmha_bwd_launcher: pack_workspace_host threw: "
+                                  << e.what() << '\n';
+                    }
+                    catch(...)
+                    {
+                        std::cerr << "fmha_bwd_launcher: pack_workspace_host threw unknown\n";
+                    }
+                },
+                pack_closure_unique.get()));
+
+            pack_closure_unique.release();
+
+            schedule_pin_staging_release();
+            pin_staging_    = std::move(pin_base);
+            release_stream_ = stream;
+        }
 
         HIP_CHECK_ERROR(
             hipMemcpyAsync(device_ws_ptr, pin_w, host_ws_size_, hipMemcpyHostToDevice, stream));
-
-        // Release any previous in-flight buffer before taking a new one.
-        schedule_pin_staging_release();
-        pin_staging_    = std::move(pin_base);
-        release_stream_ = stream;
     }
 
     private:
